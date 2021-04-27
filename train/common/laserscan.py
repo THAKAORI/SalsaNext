@@ -33,6 +33,10 @@ class LaserScan:
         self.proj_range = np.full((self.proj_H, self.proj_W), -1,
                                   dtype=np.float32)
 
+        # segment_angle - [H,W] range (-1 is no data)
+        self.segment_angle = np.full((self.proj_H, self.proj_W), -1,
+                                  dtype=np.float32)
+
         # unprojected range (list of depths for each point)
         self.unproj_range = np.zeros((0, 1), dtype=np.float32)
 
@@ -130,6 +134,7 @@ class LaserScan:
         # if projection is wanted, then do it and fill in the structure
         if self.project:
             self.do_range_projection()
+            self.get_segment_angle()
 
     def do_range_projection(self):
         """ Project a pointcloud into a spherical projection image.projection.
@@ -192,6 +197,48 @@ class LaserScan:
         self.proj_remission[proj_y, proj_x] = remission
         self.proj_idx[proj_y, proj_x] = indices
         self.proj_mask = (self.proj_idx > 0).astype(np.int32)
+
+    def get_segment_angle(self):
+        proj_x = self.proj_xyz[:, :, 0]
+        proj_y = self.proj_xyz[:, :, 1]
+        proj_z = self.proj_xyz[:, :, 2]
+
+        diff_x = proj_x[1:, :] - proj_x[:-1, :]
+        diff_y = proj_y[1:, :] - proj_y[:-1, :]
+        diff_z = proj_z[1:, :] - proj_z[:-1, :]
+
+        angle = np.arctan2(diff_z, np.sqrt(diff_x**2 + diff_y**2)) * 180 / np.pi
+        ground_mat = np.zeros_like(angle)
+        ground_mat[angle <= 10] = 1
+        ground_mat = np.pad(ground_mat, ((1, 0), (0, 0)), 'constant')
+
+        neighbor_range = self.proj_range[:,1:]
+        d1 = np.maximum(neighbor_range, self.proj_range[:,:-1])
+        d2 = np.minimum(neighbor_range, self.proj_range[:,:-1])
+        alpha = 2 * np.pi / self.proj_W
+        x_angle = np.arctan2(d2 * np.sin(alpha), d1 - d2 * np.cos(alpha))
+        x_angle[d2 < 0] = 100
+
+        neighbor_range = self.proj_range[1:,:]
+        d1 = np.maximum(neighbor_range, self.proj_range[:-1,:])
+        d2 = np.minimum(neighbor_range, self.proj_range[:-1,:])
+        fov_up = self.proj_fov_up / 180.0 * np.pi  # field of view up in rad
+        fov_down = self.proj_fov_down / 180.0 * np.pi  # field of view down in rad
+        fov = abs(fov_down) + abs(fov_up)  # get field of view total in rad
+        alpha = fov / self.proj_H
+        y_angle = np.arctan2(d2 * np.sin(alpha), d1 - d2 * np.cos(alpha))
+        y_angle[d2 < 0] = 100
+
+        x_angle_left = np.pad(x_angle, ((0,0),(0,1)), 'constant', constant_values = 100)
+        x_angle_right = np.pad(x_angle, ((0,0),(1,0)), 'constant', constant_values = 100)
+
+        y_angle_top = np.pad(y_angle, ((1,0),(0,0)), 'constant', constant_values = 100)
+        y_angle_bottom = np.pad(y_angle, ((0,1),(0,0)), 'constant', constant_values = 100)
+
+        self.segment_angle = np.minimum(np.minimum(x_angle_left, x_angle_right), np.minimum(y_angle_top, y_angle_bottom))
+        self.segment_angle[self.segment_angle >= 100] = -1
+        self.segment_angle[ground_mat == 1] = -1
+
 
 
 class SemLaserScan(LaserScan):

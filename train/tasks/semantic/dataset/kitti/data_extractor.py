@@ -1,6 +1,6 @@
 import os
-import numpy as np
 import torch
+import numpy as np
 from torch.utils.data import Dataset
 from common.laserscan import LaserScan, SemLaserScan
 import torchvision
@@ -18,7 +18,6 @@ import numbers
 import types
 from collections.abc import Sequence, Iterable
 import warnings
-
 
 EXTENSIONS_SCAN = ['.bin']
 EXTENSIONS_LABEL = ['.label']
@@ -59,8 +58,7 @@ def my_collate(batch):
 
     return data, project_mask,proj_labels
 
-class SemanticKitti(Dataset):
-
+class SemanticKittiData(Dataset):
   def __init__(self, root,    # directory where data is
                sequences,     # sequences for this data (e.g. [1,3,4,6])
                labels,        # label dict: (e.g 10: "car")
@@ -202,20 +200,6 @@ class SemanticKitti(Dataset):
       scan.sem_label = self.map(scan.sem_label, self.learning_map)
       scan.proj_sem_label = self.map(scan.proj_sem_label, self.learning_map)
 
-    # make a tensor of the uncompressed data (with the max num points)
-    unproj_n_points = scan.points.shape[0]
-    unproj_xyz = torch.full((self.max_points, 3), -1.0, dtype=torch.float)
-    unproj_xyz[:unproj_n_points] = torch.from_numpy(scan.points)
-    unproj_range = torch.full([self.max_points], -1.0, dtype=torch.float)
-    unproj_range[:unproj_n_points] = torch.from_numpy(scan.unproj_range)
-    unproj_remissions = torch.full([self.max_points], -1.0, dtype=torch.float)
-    unproj_remissions[:unproj_n_points] = torch.from_numpy(scan.remissions)
-    if self.gt:
-      unproj_labels = torch.full([self.max_points], -1.0, dtype=torch.int32)
-      unproj_labels[:unproj_n_points] = torch.from_numpy(scan.sem_label)
-    else:
-      unproj_labels = []
-
     # get points and labels
     proj_range = torch.from_numpy(scan.proj_range).clone()
     proj_segment_angle = torch.from_numpy(scan.segment_angle).clone()
@@ -227,27 +211,10 @@ class SemanticKitti(Dataset):
       proj_labels = proj_labels * proj_mask
     else:
       proj_labels = []
-    proj_x = torch.full([self.max_points], -1, dtype=torch.long)
-    proj_x[:unproj_n_points] = torch.from_numpy(scan.proj_x)
-    proj_y = torch.full([self.max_points], -1, dtype=torch.long)
-    proj_y[:unproj_n_points] = torch.from_numpy(scan.proj_y)
-    proj = torch.cat([proj_range.unsqueeze(0).clone(),
-                      proj_xyz.clone().permute(2, 0, 1),
-                      proj_remission.unsqueeze(0).clone(),
-                      proj_segment_angle.unsqueeze(0).clone()])
-    proj = (proj - self.sensor_img_means[:, None, None]
-            ) / self.sensor_img_stds[:, None, None]
-    proj = proj * proj_mask.float()
-
-    # get name and sequence
-    path_norm = os.path.normpath(scan_file)
-    path_split = path_norm.split(os.sep)
-    path_seq = path_split[-3]
-    path_name = path_split[-1].replace(".bin", ".label")
 
     # return
-    return proj, proj_mask, proj_labels, unproj_labels, path_seq, path_name, proj_x, proj_y, proj_range, unproj_range, proj_xyz, unproj_xyz, proj_remission, unproj_remissions, unproj_n_points
-
+    return proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels
+    
   def __len__(self):
     return len(self.scan_files)
 
@@ -278,7 +245,7 @@ class SemanticKitti(Dataset):
     return lut[label]
 
 
-class Parser():
+class DataExtractor():
   # standard conv, BN, relu
   def __init__(self,
                root,              # directory for data
@@ -295,7 +262,7 @@ class Parser():
                workers,           # threads to load data
                gt=True,           # get gt?
                shuffle_train=True):  # shuffle training set?
-    super(Parser, self).__init__()
+    super(DataExtractor, self).__init__()
 
     # if I am training, get the dataset
     self.root = root
@@ -317,7 +284,7 @@ class Parser():
     self.nclasses = len(self.learning_map_inv)
 
     # Data loading code
-    self.train_dataset = SemanticKitti(root=self.root,
+    self.train_dataset = SemanticKittiData(root=self.root,
                                        sequences=self.train_sequences,
                                        labels=self.labels,
                                        color_map=self.color_map,
@@ -336,7 +303,7 @@ class Parser():
     assert len(self.trainloader) > 0
     self.trainiter = iter(self.trainloader)
 
-    self.valid_dataset = SemanticKitti(root=self.root,
+    self.valid_dataset = SemanticKittiData(root=self.root,
                                        sequences=self.valid_sequences,
                                        labels=self.labels,
                                        color_map=self.color_map,
@@ -355,7 +322,7 @@ class Parser():
     self.validiter = iter(self.validloader)
 
     if self.test_sequences:
-      self.test_dataset = SemanticKitti(root=self.root,
+      self.test_dataset = SemanticKittiData(root=self.root,
                                         sequences=self.test_sequences,
                                         labels=self.labels,
                                         color_map=self.color_map,
