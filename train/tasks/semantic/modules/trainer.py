@@ -281,6 +281,8 @@ class Trainer():
                                                            color_fn=self.parser.to_color,
                                                            report=self.ARCH["train"]["report_batch"],
                                                            show_scans=self.ARCH["train"]["show_scans"])
+            message = "end train epoch:" + str(epoch)
+            send_line_notify(message)
 
             # update info
             self.info["train_update"] = update_mean
@@ -296,10 +298,14 @@ class Trainer():
                      'scheduler': self.scheduler.state_dict()
                      }
             save_checkpoint(state, self.log, suffix="")
+            message = "state checkpoint"
+            send_line_notify(message)
 
             if self.info['train_iou'] > self.info['best_train_iou']:
                 #print("Best mean iou in training set so far, save model!")
                 self.info['best_train_iou'] = self.info['train_iou']
+                message = "best_train_iou:" + str(self.info['best_train_iou'])
+                send_line_notify(message)
                 state = {'epoch': epoch, 'state_dict': self.model.state_dict(),
                          'optimizer': self.optimizer.state_dict(),
                          'info': self.info,
@@ -310,6 +316,8 @@ class Trainer():
             if epoch % self.ARCH["train"]["report_epoch"] == 0:
                 # evaluate on validation set
                 #print("*" * 80)
+                message = "evaluate on validation set"
+                send_line_notify(message)
                 acc, iou, loss, rand_img,hetero_l = self.validate(val_loader=self.parser.get_valid_set(),
                                                          model=self.model,
                                                          criterion=self.criterion,
@@ -349,6 +357,8 @@ class Trainer():
                                 model=self.model_single,
                                 img_summary=self.ARCH["train"]["save_scans"],
                                 imgs=rand_img)
+            message = "end epoch:" + str(epoch)
+            send_line_notify(message)
 
         #print('Finished Training')
 
@@ -542,9 +552,10 @@ class Trainer():
         evaluator.reset()
 
         # empty the cache to infer in high res
-        if self.gpu:
-            torch.cuda.empty_cache()
-
+        # if self.gpu:
+        #     torch.cuda.empty_cache()
+        message = "start validate"
+        send_line_notify(message)
         with torch.no_grad():
             end = time.time()
             for i, (in_vol, proj_mask, proj_labels, _, path_seq, path_name, _, _, _, _, _, _, _, _, _) in enumerate(val_loader):
@@ -553,6 +564,11 @@ class Trainer():
                     proj_mask = proj_mask.cuda()
                 if self.gpu:
                     proj_labels = proj_labels.cuda(non_blocking=True).long()
+                    #proj_labels = proj_labels.cuda().long()
+                
+                if i == 0:
+                    message = "validate input"
+                    send_line_notify(message)
 
                 # compute output
                 if self.uncertainty:
@@ -567,10 +583,25 @@ class Trainer():
                     hetero_l.update(hetero.mean().item(), in_vol.size(0))
                 else:
                     output = model(in_vol)
+                    if i == 0:
+                        message = "validate model output"
+                        send_line_notify(message)
                     log_out = torch.log(output.clamp(min=1e-8))
+                    if i == 0:
+                        message = "validate log output"
+                        send_line_notify(message)
                     jacc = self.ls(output, proj_labels)
+                    if i == 0:
+                        message = "validate jacc output"
+                        send_line_notify(message)
                     wce = criterion(log_out, proj_labels)
+                    if i == 0:
+                        message = "validate wce output"
+                        send_line_notify(message)
                     loss = wce + jacc
+                if i == 0:
+                    message = "validate output"
+                    send_line_notify(message)
 
                 # measure accuracy and record loss
                 argmax = output.argmax(dim=1)
@@ -581,7 +612,9 @@ class Trainer():
 
                 wces.update(wce.mean().item(),in_vol.size(0))
 
-
+                if i == 0:
+                    message = "validate loss"
+                    send_line_notify(message)
 
                 if save_scans:
                     # get the first scan in batch and project points
@@ -600,10 +633,16 @@ class Trainer():
                 self.batch_time_e.update(time.time() - end)
                 end = time.time()
 
+                if i == 0:
+                    message = "validate time"
+                    send_line_notify(message)
+
             accuracy = evaluator.getacc()
             jaccard, class_jaccard = evaluator.getIoU()
             acc.update(accuracy.item(), in_vol.size(0))
             iou.update(jaccard.item(), in_vol.size(0))
+            message = "validate entire loss"
+            send_line_notify(message)
             if self.uncertainty:
                 # print('Validation set:\n'       
                 #       'Time avg per batch {batch_time.avg:.3f}\n'
