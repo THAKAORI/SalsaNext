@@ -233,8 +233,8 @@ class SemanticKitti(Dataset):
     proj_y[:unproj_n_points] = torch.from_numpy(scan.proj_y)
     proj = torch.cat([proj_range.unsqueeze(0).clone(),
                       proj_xyz.clone().permute(2, 0, 1),
-                      proj_remission.unsqueeze(0).clone()])
-                      #proj_segment_angle.unsqueeze(0).clone()])
+                      proj_remission.unsqueeze(0).clone(),
+                      proj_segment_angle.unsqueeze(0).clone()])
     proj = (proj - self.sensor_img_means[:, None, None]
             ) / self.sensor_img_stds[:, None, None]
     proj = proj * proj_mask.float()

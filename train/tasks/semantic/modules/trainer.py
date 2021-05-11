@@ -131,16 +131,12 @@ class Trainer():
                 self.loss_w[x_cl] = 0
         #print("Loss weights from content: ", self.loss_w.data)
 
-        # with torch.no_grad():
-        #     if not self.uncertainty:
-        #         self.model = SalsaNext(self.parser.get_n_classes())
-        #     else:
-        #         self.model = SalsaNextUncertainty(self.parser.get_n_classes())
-        if not self.uncertainty:
-            self.model = SalsaNext(self.parser.get_n_classes())
-        else:
-            self.model = SalsaNextUncertainty(self.parser.get_n_classes())
-
+        with torch.no_grad():
+            if not self.uncertainty:
+                self.model = SalsaNext(self.parser.get_n_classes())
+            else:
+                self.model = SalsaNextUncertainty(self.parser.get_n_classes())
+    
         self.tb_logger = Logger(self.log + "/tb")
 
         # GPU?
@@ -152,7 +148,7 @@ class Trainer():
         print("Training in device: ", self.device)
         if torch.cuda.is_available() and torch.cuda.device_count() > 0:
             cudnn.benchmark = True
-            #cudnn.fastest = True
+            cudnn.fastest = True
             self.gpu = True
             self.n_gpus = 1
             self.model.cuda()
@@ -190,7 +186,7 @@ class Trainer():
                                   decay=final_decay)
 
         if self.path is not None:
-            #torch.nn.Module.dump_patches = True
+            torch.nn.Module.dump_patches = True
             w_dict = torch.load(path + "/SalsaNext",
                                 map_location=lambda storage, loc: storage)
             self.model.load_state_dict(w_dict['state_dict'], strict=True)
@@ -377,8 +373,8 @@ class Trainer():
         update_ratio_meter = AverageMeter()
 
         # empty the cache to train now
-        # if self.gpu:
-        #     torch.cuda.empty_cache()
+        if self.gpu:
+            torch.cuda.empty_cache()
 
         # switch to train mode
         model.train()
@@ -556,8 +552,8 @@ class Trainer():
         evaluator.reset()
 
         # empty the cache to infer in high res
-        # if self.gpu:
-        #     torch.cuda.empty_cache()
+        if self.gpu:
+            torch.cuda.empty_cache()
         message = "start validate"
         send_line_notify(message)
         with torch.no_grad():
@@ -565,10 +561,10 @@ class Trainer():
             for i, (in_vol, proj_mask, proj_labels, _, path_seq, path_name, _, _, _, _, _, _, _, _, _) in enumerate(val_loader):
                 if not self.multi_gpu and self.gpu:
                     in_vol = in_vol.cuda()
-                    #proj_mask = proj_mask.cuda()
+                    proj_mask = proj_mask.cuda()
                 if self.gpu:
-                    #proj_labels = proj_labels.cuda(non_blocking=True).long()
-                    proj_labels = proj_labels.cuda().long()
+                    proj_labels = proj_labels.cuda(non_blocking=True).long()
+                    #proj_labels = proj_labels.cuda().long()
                 
                 if i == 0:
                     message = "validate input"
