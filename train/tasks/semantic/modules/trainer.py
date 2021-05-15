@@ -22,6 +22,7 @@ from tasks.semantic.modules.SalsaNextAdf import *
 from tasks.semantic.modules.Lovasz_Softmax import Lovasz_softmax
 import tasks.semantic.modules.adf as adf
 import requests
+from torchinfo import summary
 
 def keep_variance_fn(x):
     return x + 1e-3
@@ -129,7 +130,7 @@ class Trainer():
             if DATA["learning_ignore"][x_cl]:
                 # don't weigh
                 self.loss_w[x_cl] = 0
-        #print("Loss weights from content: ", self.loss_w.data)
+        print("Loss weights from content: ", self.loss_w.data)
 
         with torch.no_grad():
             if not self.uncertainty:
@@ -153,13 +154,15 @@ class Trainer():
             self.n_gpus = 1
             self.model.cuda()
         if torch.cuda.is_available() and torch.cuda.device_count() > 1:
-            #print("Let's use", torch.cuda.device_count(), "GPUs!")
+            print("Let's use", torch.cuda.device_count(), "GPUs!")
             self.model = nn.DataParallel(self.model)  # spread in gpus
             self.model = convert_model(self.model).cuda()  # sync batchnorm
             self.model_single = self.model.module  # single model to get weight names
             self.multi_gpu = True
             self.n_gpus = torch.cuda.device_count()
 
+        print("batch_size, channel, height, width", 18, 5, 64, 2048)
+        print(summary(self.model, (18, 5, 64, 2048)))
 
         self.criterion = nn.NLLLoss(weight=self.loss_w).to(self.device)
         self.ls = Lovasz_softmax(ignore=0).to(self.device)
@@ -193,9 +196,9 @@ class Trainer():
             self.optimizer.load_state_dict(w_dict['optimizer'])
             self.epoch = w_dict['epoch'] + 1
             self.scheduler.load_state_dict(w_dict['scheduler'])
-            #print("dict epoch:", w_dict['epoch'])
+            print("dict epoch:", w_dict['epoch'])
             self.info = w_dict['info']
-            #print("info", w_dict['info'])
+            print("info", w_dict['info'])
 
 
     def calculate_estimate(self, epoch, iter):
@@ -261,7 +264,7 @@ class Trainer():
         for i, w in enumerate(self.loss_w):
             if w < 1e-10:
                 self.ignore_class.append(i)
-                #print("Ignoring class ", i, " in IoU evaluation")
+                print("Ignoring class ", i, " in IoU evaluation")
         self.evaluator = iouEval(self.parser.get_n_classes(),
                                  self.device, self.ignore_class)
 
@@ -281,8 +284,6 @@ class Trainer():
                                                            color_fn=self.parser.to_color,
                                                            report=self.ARCH["train"]["report_batch"],
                                                            show_scans=self.ARCH["train"]["show_scans"])
-            message = "end train epoch:" + str(epoch)
-            send_line_notify(message)
 
             # update info
             self.info["train_update"] = update_mean
@@ -298,11 +299,9 @@ class Trainer():
                      'scheduler': self.scheduler.state_dict()
                      }
             save_checkpoint(state, self.log, suffix="")
-            message = "state checkpoint"
-            send_line_notify(message)
 
             if self.info['train_iou'] > self.info['best_train_iou']:
-                #print("Best mean iou in training set so far, save model!")
+                print("Best mean iou in training set so far, save model!")
                 self.info['best_train_iou'] = self.info['train_iou']
                 message = "best_train_iou:" + str(self.info['best_train_iou'])
                 send_line_notify(message)
@@ -315,9 +314,7 @@ class Trainer():
 
             if epoch % self.ARCH["train"]["report_epoch"] == 0:
                 # evaluate on validation set
-                #print("*" * 80)
-                message = "evaluate on validation set"
-                send_line_notify(message)
+                print("*" * 80)
                 acc, iou, loss, rand_img,hetero_l = self.validate(val_loader=self.parser.get_valid_set(),
                                                          model=self.model,
                                                          criterion=self.criterion,
@@ -334,8 +331,8 @@ class Trainer():
 
             # remember best iou and save checkpoint
             if self.info['valid_iou'] > self.info['best_val_iou']:
-                #print("Best mean iou in validation so far, save model!")
-                #print("*" * 80)
+                print("Best mean iou in validation so far, save model!")
+                print("*" * 80)
                 self.info['best_val_iou'] = self.info['valid_iou']
 
                 # save the weights!
@@ -346,7 +343,7 @@ class Trainer():
                          }
                 save_checkpoint(state, self.log, suffix="_valid_best")
 
-            #print("*" * 80)
+            print("*" * 80)
 
             # save to log
             Trainer.save_to_log(logdir=self.log,
@@ -360,7 +357,7 @@ class Trainer():
             message = "end epoch:" + str(epoch)
             send_line_notify(message)
 
-        #print('Finished Training')
+        print('Finished Training')
 
         return
 
@@ -380,8 +377,6 @@ class Trainer():
         model.train()
 
         end = time.time()
-        message = "start train"
-        send_line_notify(message)
         for i, (in_vol, proj_mask, proj_labels, _, path_seq, path_name, _, _, _, _, _, _, _, _, _) in enumerate(train_loader):
             # measure data loading time
             self.data_time_t.update(time.time() - end)
@@ -390,9 +385,6 @@ class Trainer():
                 #proj_mask = proj_mask.cuda()
             if self.gpu:
                 proj_labels = proj_labels.cuda().long()
-            if i == 0:
-                message = "data and label"
-                send_line_notify(message)
 
             # compute output
             if self.uncertainty:
@@ -406,9 +398,6 @@ class Trainer():
             else:
                 output = model(in_vol)
                 loss_m = criterion(torch.log(output.clamp(min=1e-8)), proj_labels) + self.ls(output, proj_labels.long())
-            if i == 0:
-                message = "output"
-                send_line_notify(message)
 
             optimizer.zero_grad()
             if self.n_gpus > 1:
@@ -417,9 +406,6 @@ class Trainer():
             else:
                 loss_m.backward()
             optimizer.step()
-            if i == 0:
-                message = "optimizer"
-                send_line_notify(message)
 
             # measure accuracy and record loss
             loss = loss_m.mean()
@@ -454,9 +440,6 @@ class Trainer():
             update_std = update_ratios.std()
             update_ratio_meter.update(update_mean)  # over the epoch
 
-            if i == 0:
-                message = "log done"
-                send_line_notify(message)
 
             if show_scans:
                 # get the first scan in batch and project points
@@ -478,18 +461,18 @@ class Trainer():
             if self.uncertainty:
 
                 if i % self.ARCH["train"]["report_batch"] == 0:
-                    # print( 'Lr: {lr:.3e} | '
-                    #       'Update: {umean:.3e} mean,{ustd:.3e} std | '
-                    #       'Epoch: [{0}][{1}/{2}] | '
-                    #       'Time {batch_time.val:.3f} ({batch_time.avg:.3f}) | '
-                    #       'Data {data_time.val:.3f} ({data_time.avg:.3f}) | '
-                    #       'Loss {loss.val:.4f} ({loss.avg:.4f}) | '
-                    #       'Hetero {hetero_l.val:.4f} ({hetero_l.avg:.4f}) | '
-                    #       'acc {acc.val:.3f} ({acc.avg:.3f}) | '
-                    #       'IoU {iou.val:.3f} ({iou.avg:.3f}) | [{estim}]'.format(
-                    #     epoch, i, len(train_loader), batch_time=self.batch_time_t,
-                    #     data_time=self.data_time_t, loss=losses, hetero_l=hetero_l,acc=acc, iou=iou, lr=lr,
-                    #     umean=update_mean, ustd=update_std, estim=self.calculate_estimate(epoch, i)))
+                    print( 'Lr: {lr:.3e} | '
+                          'Update: {umean:.3e} mean,{ustd:.3e} std | '
+                          'Epoch: [{0}][{1}/{2}] | '
+                          'Time {batch_time.val:.3f} ({batch_time.avg:.3f}) | '
+                          'Data {data_time.val:.3f} ({data_time.avg:.3f}) | '
+                          'Loss {loss.val:.4f} ({loss.avg:.4f}) | '
+                          'Hetero {hetero_l.val:.4f} ({hetero_l.avg:.4f}) | '
+                          'acc {acc.val:.3f} ({acc.avg:.3f}) | '
+                          'IoU {iou.val:.3f} ({iou.avg:.3f}) | [{estim}]'.format(
+                        epoch, i, len(train_loader), batch_time=self.batch_time_t,
+                        data_time=self.data_time_t, loss=losses, hetero_l=hetero_l,acc=acc, iou=iou, lr=lr,
+                        umean=update_mean, ustd=update_std, estim=self.calculate_estimate(epoch, i)))
                     
 
                     save_to_log(self.log, 'log.txt', 'Lr: {lr:.3e} | '
@@ -506,17 +489,17 @@ class Trainer():
                         umean=update_mean, ustd=update_std, estim=self.calculate_estimate(epoch, i)))
             else:
                 if i % self.ARCH["train"]["report_batch"] == 0:
-                    # print('Lr: {lr:.3e} | '
-                    #       'Update: {umean:.3e} mean,{ustd:.3e} std | '
-                    #       'Epoch: [{0}][{1}/{2}] | '
-                    #       'Time {batch_time.val:.3f} ({batch_time.avg:.3f}) | '
-                    #       'Data {data_time.val:.3f} ({data_time.avg:.3f}) | '
-                    #       'Loss {loss.val:.4f} ({loss.avg:.4f}) | '
-                    #       'acc {acc.val:.3f} ({acc.avg:.3f}) | '
-                    #       'IoU {iou.val:.3f} ({iou.avg:.3f}) | [{estim}]'.format(
-                    #     epoch, i, len(train_loader), batch_time=self.batch_time_t,
-                    #     data_time=self.data_time_t, loss=losses, acc=acc, iou=iou, lr=lr,
-                    #     umean=update_mean, ustd=update_std, estim=self.calculate_estimate(epoch, i)))
+                    print('Lr: {lr:.3e} | '
+                          'Update: {umean:.3e} mean,{ustd:.3e} std | '
+                          'Epoch: [{0}][{1}/{2}] | '
+                          'Time {batch_time.val:.3f} ({batch_time.avg:.3f}) | '
+                          'Data {data_time.val:.3f} ({data_time.avg:.3f}) | '
+                          'Loss {loss.val:.4f} ({loss.avg:.4f}) | '
+                          'acc {acc.val:.3f} ({acc.avg:.3f}) | '
+                          'IoU {iou.val:.3f} ({iou.avg:.3f}) | [{estim}]'.format(
+                        epoch, i, len(train_loader), batch_time=self.batch_time_t,
+                        data_time=self.data_time_t, loss=losses, acc=acc, iou=iou, lr=lr,
+                        umean=update_mean, ustd=update_std, estim=self.calculate_estimate(epoch, i)))
 
                     save_to_log(self.log, 'log.txt', 'Lr: {lr:.3e} | '
                                                      'Update: {umean:.3e} mean,{ustd:.3e} std | '
@@ -532,9 +515,6 @@ class Trainer():
 
             # step scheduler
             scheduler.step()
-            if i == 0:
-                message = "scheduler step"
-                send_line_notify(message)
 
         return acc.avg, iou.avg, losses.avg, update_ratio_meter.avg,hetero_l.avg
 
@@ -554,8 +534,7 @@ class Trainer():
         # empty the cache to infer in high res
         if self.gpu:
             torch.cuda.empty_cache()
-        message = "start validate"
-        send_line_notify(message)
+
         with torch.no_grad():
             end = time.time()
             for i, (in_vol, proj_mask, proj_labels, _, path_seq, path_name, _, _, _, _, _, _, _, _, _) in enumerate(val_loader):
@@ -565,10 +544,6 @@ class Trainer():
                 if self.gpu:
                     proj_labels = proj_labels.cuda(non_blocking=True).long()
                     #proj_labels = proj_labels.cuda().long()
-                
-                if i == 0:
-                    message = "validate input"
-                    send_line_notify(message)
 
                 # compute output
                 if self.uncertainty:
@@ -583,25 +558,10 @@ class Trainer():
                     hetero_l.update(hetero.mean().item(), in_vol.size(0))
                 else:
                     output = model(in_vol)
-                    if i == 0:
-                        message = "validate model output"
-                        send_line_notify(message)
                     log_out = torch.log(output.clamp(min=1e-8))
-                    if i == 0:
-                        message = "validate log output"
-                        send_line_notify(message)
                     jacc = self.ls(output, proj_labels)
-                    if i == 0:
-                        message = "validate jacc output"
-                        send_line_notify(message)
                     wce = criterion(log_out, proj_labels)
-                    if i == 0:
-                        message = "validate wce output"
-                        send_line_notify(message)
                     loss = wce + jacc
-                if i == 0:
-                    message = "validate output"
-                    send_line_notify(message)
 
                 # measure accuracy and record loss
                 argmax = output.argmax(dim=1)
@@ -611,10 +571,6 @@ class Trainer():
 
 
                 wces.update(wce.mean().item(),in_vol.size(0))
-
-                if i == 0:
-                    message = "validate loss"
-                    send_line_notify(message)
 
                 if save_scans:
                     # get the first scan in batch and project points
@@ -633,30 +589,24 @@ class Trainer():
                 self.batch_time_e.update(time.time() - end)
                 end = time.time()
 
-                if i == 0:
-                    message = "validate time"
-                    send_line_notify(message)
-
             accuracy = evaluator.getacc()
             jaccard, class_jaccard = evaluator.getIoU()
             acc.update(accuracy.item(), in_vol.size(0))
             iou.update(jaccard.item(), in_vol.size(0))
-            message = "validate entire loss"
-            send_line_notify(message)
             if self.uncertainty:
-                # print('Validation set:\n'       
-                #       'Time avg per batch {batch_time.avg:.3f}\n'
-                #       'Loss avg {loss.avg:.4f}\n'
-                #       'Jaccard avg {jac.avg:.4f}\n'
-                #       'WCE avg {wces.avg:.4f}\n'
-                #       'Hetero avg {hetero.avg}:.4f\n'
-                #       'Acc avg {acc.avg:.3f}\n'
-                #       'IoU avg {iou.avg:.3f}'.format(batch_time=self.batch_time_e,
-                #                                      loss=losses,
-                #                                      jac=jaccs,
-                #                                      wces=wces,
-                #                                      hetero=hetero_l,
-                #                                      acc=acc, iou=iou))
+                print('Validation set:\n'       
+                      'Time avg per batch {batch_time.avg:.3f}\n'
+                      'Loss avg {loss.avg:.4f}\n'
+                      'Jaccard avg {jac.avg:.4f}\n'
+                      'WCE avg {wces.avg:.4f}\n'
+                      'Hetero avg {hetero.avg}:.4f\n'
+                      'Acc avg {acc.avg:.3f}\n'
+                      'IoU avg {iou.avg:.3f}'.format(batch_time=self.batch_time_e,
+                                                     loss=losses,
+                                                     jac=jaccs,
+                                                     wces=wces,
+                                                     hetero=hetero_l,
+                                                     acc=acc, iou=iou))
 
                 save_to_log(self.log, 'log.txt', 'Validation set:\n'
                       'Time avg per batch {batch_time.avg:.3f}\n'
@@ -673,24 +623,24 @@ class Trainer():
                                                      acc=acc, iou=iou))
                 # print also classwise
                 for i, jacc in enumerate(class_jaccard):
-                    # print('IoU class {i:} [{class_str:}] = {jacc:.3f}'.format(
-                    #     i=i, class_str=class_func(i), jacc=jacc))
+                    print('IoU class {i:} [{class_str:}] = {jacc:.3f}'.format(
+                        i=i, class_str=class_func(i), jacc=jacc))
                     save_to_log(self.log, 'log.txt', 'IoU class {i:} [{class_str:}] = {jacc:.3f}'.format(
                         i=i, class_str=class_func(i), jacc=jacc))
                     self.info["valid_classes/"+class_func(i)] = jacc
             else:
 
-                # print('Validation set:\n'
-                #       'Time avg per batch {batch_time.avg:.3f}\n'
-                #       'Loss avg {loss.avg:.4f}\n'
-                #       'Jaccard avg {jac.avg:.4f}\n'
-                #       'WCE avg {wces.avg:.4f}\n'
-                #       'Acc avg {acc.avg:.3f}\n'
-                #       'IoU avg {iou.avg:.3f}'.format(batch_time=self.batch_time_e,
-                #                                      loss=losses,
-                #                                      jac=jaccs,
-                #                                      wces=wces,
-                #                                      acc=acc, iou=iou))
+                print('Validation set:\n'
+                      'Time avg per batch {batch_time.avg:.3f}\n'
+                      'Loss avg {loss.avg:.4f}\n'
+                      'Jaccard avg {jac.avg:.4f}\n'
+                      'WCE avg {wces.avg:.4f}\n'
+                      'Acc avg {acc.avg:.3f}\n'
+                      'IoU avg {iou.avg:.3f}'.format(batch_time=self.batch_time_e,
+                                                     loss=losses,
+                                                     jac=jaccs,
+                                                     wces=wces,
+                                                     acc=acc, iou=iou))
                 message = ('Validation set:\n'
                       'Time avg per batch {batch_time.avg:.3f}\n'
                       'Loss avg {loss.avg:.4f}\n'
@@ -717,8 +667,8 @@ class Trainer():
                                                                                 acc=acc, iou=iou))
                 # print also classwise
                 for i, jacc in enumerate(class_jaccard):
-                    # print('IoU class {i:} [{class_str:}] = {jacc:.3f}'.format(
-                    #     i=i, class_str=class_func(i), jacc=jacc))
+                    print('IoU class {i:} [{class_str:}] = {jacc:.3f}'.format(
+                        i=i, class_str=class_func(i), jacc=jacc))
                     message = ('IoU class {i:} [{class_str:}] = {jacc:.3f}'.format(
                          i=i, class_str=class_func(i), jacc=jacc))
                     send_line_notify(message)
