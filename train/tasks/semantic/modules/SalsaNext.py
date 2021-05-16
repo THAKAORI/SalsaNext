@@ -183,11 +183,11 @@ class ConvBN(nn.Module):
         return self.layers(x)
 
 class FA(nn.Module):
-    def __init__(self, ch_in, kernel_size=3,
+    def __init__(self, ch_in, dropout_rate, kernel_size=3,
              stride=1, padding=1):
         super(FA, self).__init__()
-        self.convbnq = ConvBN(ch_in, 32, kernel_size, stride, padding)
-        self.convbnk = ConvBN(ch_in, 32, kernel_size, stride, padding)
+        self.convbnq = ConvBN(ch_in, 16, kernel_size, stride, padding)
+        self.convbnk = ConvBN(ch_in, 16, kernel_size, stride, padding)
         self.convbnv = ConvBN(ch_in, ch_in, kernel_size, stride, padding)
         self.relu = nn.ReLU()
 
@@ -196,15 +196,17 @@ class FA(nn.Module):
             nn.ReLU()
         )
 
+        self.dropout = nn.Dropout2d(p=dropout_rate)
+
     def forward(self, x):
         batch_size, c, h, w = x.shape
         Q = self.convbnq(x)
-        Q = torch.reshape(Q, (batch_size, 32, -1))
+        Q = torch.reshape(Q, (batch_size, 16, -1))
         Q = F.normalize(Q, p=2, dim=2)
         Q = Q.permute(0, 2, 1)
         
         K = self.convbnk(x)
-        K = torch.reshape(K,(batch_size, 32, -1))
+        K = torch.reshape(K,(batch_size, 16, -1))
         K = F.normalize(K, p=2, dim=2)
         
         out = self.convbnv(x)
@@ -219,6 +221,8 @@ class FA(nn.Module):
         attention = torch.reshape(attention, (batch_size, c, h, w))
         attention = self.convbnrelu(attention)
         result = out + attention
+
+        result = self.dropout(result)
         return result
 
 
@@ -237,10 +241,9 @@ class SalsaNext(nn.Module):
         self.resBlock4 = ResBlock(2 * 4 * 32, 2 * 4 * 32, 0.2, pooling=True)
         self.resBlock5 = ResBlock(2 * 4 * 32, 2 * 4 * 32, 0.2, pooling=False)
 
-        self.fa1 = FA(2 * 32)
-        self.fa2 = FA(4 * 32)
-        self.fa3 = FA(8 * 32)
-        self.fa4 = FA(8 * 32)
+        self.fa1 = FA(2 * 32, 0.2)
+        self.fa2 = FA(4 * 32, 0.2)
+        self.fa3 = FA(8 * 32, 0.2)
 
         self.upBlock1 = UpBlock(2 * 4 * 32, 4 * 32, 0.2)
         self.upBlock2 = UpBlock(4 * 32, 4 * 32, 0.2)
@@ -260,7 +263,6 @@ class SalsaNext(nn.Module):
         down3c, down3b = self.resBlock4(down2c)
         down5c = self.resBlock5(down3c)
 
-        down3b = self.fa4(down3b)
         up4e = self.upBlock1(down5c,down3b)
         down2b = self.fa3(down2b)
         up3e = self.upBlock2(up4e, down2b)
