@@ -17,8 +17,9 @@ from common.logger import Logger
 from common.sync_batchnorm.batchnorm import convert_model
 from common.warmupLR import *
 from tasks.semantic.modules.ioueval import *
-from tasks.semantic.modules.SalsaNext import *
-from tasks.semantic.modules.SalsaNextAdf import *
+#from tasks.semantic.modules.SalsaNext import *
+from tasks.semantic.modules.DDRNet import *
+#from tasks.semantic.modules.SalsaNextAdf import *
 from tasks.semantic.modules.Lovasz_Softmax import Lovasz_softmax
 import tasks.semantic.modules.adf as adf
 import requests
@@ -132,11 +133,14 @@ class Trainer():
                 self.loss_w[x_cl] = 0
         print("Loss weights from content: ", self.loss_w.data)
 
+        # with torch.no_grad():
+        #     if not self.uncertainty:
+        #         self.model = SalsaNext(self.parser.get_n_classes())
+        #     else:
+        #         self.model = SalsaNextUncertainty(self.parser.get_n_classes())
+        layers = [3, 4, 6, 3]
         with torch.no_grad():
-            if not self.uncertainty:
-                self.model = SalsaNext(self.parser.get_n_classes())
-            else:
-                self.model = SalsaNextUncertainty(self.parser.get_n_classes())
+            self.model = DualResNet(BasicBlock, layers, augment=True)
     
         self.tb_logger = Logger(self.log + "/tb")
 
@@ -161,8 +165,8 @@ class Trainer():
             self.multi_gpu = True
             self.n_gpus = torch.cuda.device_count()
 
-        print("batch_size, channel, height, width", 18, 5, 64, 2048)
-        print(summary(self.model, (18, 5, 64, 2048)))
+        print("batch_size, channel, height, width", 24, 5, 64, 2048)
+        print(summary(self.model, (24, 5, 64, 2048)))
 
         self.criterion = nn.NLLLoss(weight=self.loss_w).to(self.device)
         self.ls = Lovasz_softmax(ignore=0).to(self.device)
@@ -396,19 +400,21 @@ class Trainer():
                 hetero_l.update(hetero.mean().item(), in_vol.size(0))
                 output = output_mean
             else:
-                output = model(in_vol)
+                output, output_extra = model(in_vol)
                 loss_m = criterion(torch.log(output.clamp(min=1e-8)), proj_labels) + self.ls(output, proj_labels.long())
+                loss_extra = criterion(torch.log(output_extra.clamp(min=1e-8)), proj_labels) + self.ls(output_extra, proj_labels.long())
+                loss_all = loss_m + 0.4 * loss_extra
 
             optimizer.zero_grad()
             if self.n_gpus > 1:
                 idx = torch.ones(self.n_gpus).cuda()
-                loss_m.backward(idx)
+                loss_all.backward(idx)
             else:
-                loss_m.backward()
+                loss_all.backward()
             optimizer.step()
 
             # measure accuracy and record loss
-            loss = loss_m.mean()
+            loss = loss_all.mean()
             with torch.no_grad():
                 evaluator.reset()
                 argmax = output.argmax(dim=1)
@@ -557,7 +563,7 @@ class Trainer():
                     loss = wce + jacc
                     hetero_l.update(hetero.mean().item(), in_vol.size(0))
                 else:
-                    output = model(in_vol)
+                    output, _ = model(in_vol)
                     log_out = torch.log(output.clamp(min=1e-8))
                     jacc = self.ls(output, proj_labels)
                     wce = criterion(log_out, proj_labels)
