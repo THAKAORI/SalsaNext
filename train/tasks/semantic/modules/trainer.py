@@ -138,7 +138,7 @@ class Trainer():
         #         self.model = SalsaNext(self.parser.get_n_classes())
         #     else:
         #         self.model = SalsaNextUncertainty(self.parser.get_n_classes())
-        layers = [3, 4, 6, 3]
+        layers = [2, 2, 4, 1]
         with torch.no_grad():
             self.model = DualResNet(BasicBlock, layers, augment=True)
     

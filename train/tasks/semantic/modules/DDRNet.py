@@ -17,7 +17,7 @@ def conv3x3(in_planes, out_planes, stride=1):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, no_relu=False):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, no_relu=False, dropout_rate=0.2):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
         self.bn1 = nn.BatchNorm2d(planes, momentum=bn_mom)
@@ -27,6 +27,7 @@ class BasicBlock(nn.Module):
         self.downsample = downsample
         self.stride = stride
         self.no_relu = no_relu
+        self.dropout = nn.Dropout2d(p=dropout_rate)
 
     def forward(self, x):
         residual = x
@@ -44,14 +45,14 @@ class BasicBlock(nn.Module):
         out += residual
 
         if self.no_relu:
-            return out
+            return self.dropout(out)
         else:
-            return self.relu(out)
+            return self.dropout(self.relu(out))
 
 class Bottleneck(nn.Module):
     expansion = 2
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, no_relu=True):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, no_relu=True, dropout_rate=0.2):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes, momentum=bn_mom)
@@ -66,6 +67,7 @@ class Bottleneck(nn.Module):
         self.downsample = downsample
         self.stride = stride
         self.no_relu = no_relu
+        self.dropout = nn.Dropout2d(p=dropout_rate)
 
     def forward(self, x):
         residual = x
@@ -86,9 +88,9 @@ class Bottleneck(nn.Module):
 
         out += residual
         if self.no_relu:
-            return out
+            return self.dropout(out)
         else:
-            return self.relu(out)
+            return self.dropout(self.relu(out))
 
 class DAPPM(nn.Module):
     def __init__(self, inplanes, branch_planes, outplanes):
@@ -208,10 +210,10 @@ class DualResNet(nn.Module):
         self.augment = augment
 
         self.conv1 =  nn.Sequential(
-                          nn.Conv2d(5,planes,kernel_size=3, stride=2, padding=1),
+                          nn.Conv2d(5,planes,kernel_size=3, stride=1, padding=1),
                           nn.BatchNorm2d(planes, momentum=bn_mom),
                           nn.ReLU(inplace=True),
-                          nn.Conv2d(planes,planes,kernel_size=3, stride=2, padding=1),
+                          nn.Conv2d(planes,planes,kernel_size=3, stride=1, padding=1),
                           nn.BatchNorm2d(planes, momentum=bn_mom),
                           nn.ReLU(inplace=True),
                       )
@@ -269,9 +271,9 @@ class DualResNet(nn.Module):
         self.spp = DAPPM(planes * 16, spp_planes, planes * 4)
 
         if self.augment:
-            self.seghead_extra = segmenthead(highres_planes, head_planes, num_classes, scale_factor=8)
+            self.seghead_extra = segmenthead(highres_planes, head_planes, num_classes, scale_factor=2)
 
-        self.final_layer = segmenthead(planes * 4, head_planes, num_classes, scale_factor=8)
+        self.final_layer = segmenthead(planes * 4, head_planes, num_classes, scale_factor=2)
 
 
         for m in self.modules():
@@ -305,8 +307,8 @@ class DualResNet(nn.Module):
 
     def forward(self, x):
 
-        width_output = x.shape[-1] // 8
-        height_output = x.shape[-2] // 8
+        width_output = x.shape[-1] // 2
+        height_output = x.shape[-2] // 2
         layers = []
 
         x = self.conv1(x)
