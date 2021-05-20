@@ -17,83 +17,82 @@ def conv3x3(in_planes, out_planes, stride=1):
 class BasicBlock(nn.Module):
     expansion = 1
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, no_relu=False, dropout_rate=0.2):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, no_relu=False, dropout_rate=0.3):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes, momentum=bn_mom)
+        self.bn1 = nn.BatchNorm2d(inplanes, momentum=bn_mom)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
         self.bn2 = nn.BatchNorm2d(planes, momentum=bn_mom)
         self.downsample = downsample
         self.stride = stride
         self.no_relu = no_relu
-        self.dropout = nn.Dropout2d(p=dropout_rate)
+        self.dropout_rate = dropout_rate
 
     def forward(self, x):
         residual = x
 
-        out = self.conv1(x)
-        out = self.bn1(out)
+        out = self.bn1(x)
         out = self.relu(out)
+        out = self.conv1(out)
 
-        out = self.conv2(out)
         out = self.bn2(out)
+        out = self.relu(out)
+        out = F.dropout(out, self.dropout_rate, self.training)
+        out = self.conv2(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
 
         out += residual
 
-        if self.no_relu:
-            return self.dropout(out)
-        else:
-            return self.dropout(self.relu(out))
+        return out
 
 class Bottleneck(nn.Module):
     expansion = 2
 
-    def __init__(self, inplanes, planes, stride=1, downsample=None, no_relu=True, dropout_rate=0.2):
+    def __init__(self, inplanes, planes, stride=1, downsample=None, no_relu=True, dropout_rate=0.3):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes, momentum=bn_mom)
+        self.bn1 = nn.BatchNorm2d(inplanes, momentum=bn_mom)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
                                padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(planes, momentum=bn_mom)
         self.conv3 = nn.Conv2d(planes, planes * self.expansion, kernel_size=1,
                                bias=False)
-        self.bn3 = nn.BatchNorm2d(planes * self.expansion,
+        self.bn3 = nn.BatchNorm2d(planes,
                                momentum=bn_mom)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride
         self.no_relu = no_relu
-        self.dropout = nn.Dropout2d(p=dropout_rate)
+        self.dropout_rate = dropout_rate
 
     def forward(self, x):
         residual = x
 
-        out = self.conv1(x)
-        out = self.bn1(out)
+        out = self.bn1(x)
         out = self.relu(out)
+        out = self.conv1(out)
 
-        out = self.conv2(out)
         out = self.bn2(out)
         out = self.relu(out)
+        out = self.conv2(out)
 
-        out = self.conv3(out)
         out = self.bn3(out)
+        out = self.relu(out)
+        out = F.dropout(out, self.dropout_rate, self.training)
+        out = self.conv3(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
 
         out += residual
-        if self.no_relu:
-            return self.dropout(out)
-        else:
-            return self.dropout(self.relu(out))
+        
+        return out
 
 class DAPPM(nn.Module):
-    def __init__(self, inplanes, branch_planes, outplanes):
+    def __init__(self, inplanes, branch_planes, outplanes, dropout_rate = 0.3):
         super(DAPPM, self).__init__()
         self.scale1 = nn.Sequential(nn.AvgPool2d(kernel_size=5, stride=2, padding=2),
                                     nn.BatchNorm2d(inplanes, momentum=bn_mom),
@@ -150,6 +149,7 @@ class DAPPM(nn.Module):
                                     nn.ReLU(inplace=True),
                                     nn.Conv2d(inplanes, outplanes, kernel_size=1, bias=False),
                                     )
+        self.dropout_rate = dropout_rate
 
     def forward(self, x):
 
@@ -177,23 +177,25 @@ class DAPPM(nn.Module):
 
 class segmenthead(nn.Module):
 
-    def __init__(self, inplanes, interplanes, outplanes, scale_factor=None):
+    def __init__(self, inplanes, interplanes, outplanes, scale_factor_height=None, scale_factor_width=None, dropout_rate = 0.3):
         super(segmenthead, self).__init__()
         self.bn1 = nn.BatchNorm2d(inplanes, momentum=bn_mom)
         self.conv1 = nn.Conv2d(inplanes, interplanes, kernel_size=3, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(interplanes, momentum=bn_mom)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = nn.Conv2d(interplanes, outplanes, kernel_size=1, padding=0, bias=True)
-        self.scale_factor = scale_factor
+        self.scale_factor_height = scale_factor_height
+        self.scale_factor_width = scale_factor_width
+        self.dropout_rate = dropout_rate
 
     def forward(self, x):
         
         x = self.conv1(self.relu(self.bn1(x)))
         out = self.conv2(self.relu(self.bn2(x)))
 
-        if self.scale_factor is not None:
-            height = x.shape[-2] * self.scale_factor
-            width = x.shape[-1] * self.scale_factor
+        if (self.scale_factor_height and self.scale_factor_width) is not None:
+            height = x.shape[-2] * self.scale_factor_height
+            width = x.shape[-1] * self.scale_factor_width
             out = F.interpolate(out,
                         size=[height, width],
                         mode='bilinear')
@@ -209,53 +211,68 @@ class DualResNet(nn.Module):
         highres_planes = planes * 2
         self.augment = augment
 
-        self.conv1 =  nn.Sequential(
+        self.conv0 =  nn.Sequential(
                           nn.Conv2d(5,planes,kernel_size=3, stride=1, padding=1),
                           nn.BatchNorm2d(planes, momentum=bn_mom),
                           nn.ReLU(inplace=True),
+                          nn.Conv2d(planes,planes,kernel_size=3, stride=(1,2), padding=1),
+                          nn.BatchNorm2d(planes, momentum=bn_mom),
+                          nn.ReLU(inplace=True),
+                      )
+        self.conv1 =  nn.Sequential(
                           nn.Conv2d(planes,planes,kernel_size=3, stride=1, padding=1),
+                          nn.BatchNorm2d(planes, momentum=bn_mom),
+                          nn.ReLU(inplace=True),
+                          nn.Conv2d(planes,planes,kernel_size=3, stride=(1,2), padding=1),
                           nn.BatchNorm2d(planes, momentum=bn_mom),
                           nn.ReLU(inplace=True),
                       )
 
         self.relu = nn.ReLU(inplace=False)
         self.layer1 = self._make_layer(block, planes, planes, layers[0])
-        self.layer2 = self._make_layer(block, planes, planes * 2, layers[1], stride=2)
+        self.layer2 = self._make_layer(block, planes, planes * 2, layers[1], stride=(1,2))
         self.layer3_1 = self._make_layer(block, planes * 2, planes * 4, layers[2] // 2, stride=2)
         self.layer3_2 = self._make_layer(block, planes * 4, planes * 4, layers[2] // 2)
         self.layer4 = self._make_layer(block, planes * 4, planes * 8, layers[3], stride=2)
 
         self.compression3_1 = nn.Sequential(
+                                          nn.BatchNorm2d(planes * 4, momentum=bn_mom),
+                                          nn.ReLU(inplace=True),
                                           nn.Conv2d(planes * 4, highres_planes, kernel_size=1, bias=False),
-                                          nn.BatchNorm2d(highres_planes, momentum=bn_mom),
                                           )
 
         self.compression3_2 = nn.Sequential(
+                                          nn.BatchNorm2d(planes * 4, momentum=bn_mom),
+                                          nn.ReLU(inplace=True),
                                           nn.Conv2d(planes * 4, highres_planes, kernel_size=1, bias=False),
-                                          nn.BatchNorm2d(highres_planes, momentum=bn_mom),
                                           )
 
         self.compression4 = nn.Sequential(
+                                          nn.BatchNorm2d(planes * 8, momentum=bn_mom),
+                                          nn.ReLU(inplace=True),
                                           nn.Conv2d(planes * 8, highres_planes, kernel_size=1, bias=False),
-                                          nn.BatchNorm2d(highres_planes, momentum=bn_mom),
                                           )
 
         self.down3_1 = nn.Sequential(
+                                   nn.BatchNorm2d(highres_planes, momentum=bn_mom),
+                                   nn.ReLU(inplace=True),
                                    nn.Conv2d(highres_planes, planes * 4, kernel_size=3, stride=2, padding=1, bias=False),
-                                   nn.BatchNorm2d(planes * 4, momentum=bn_mom),
                                    )
 
         self.down3_2 = nn.Sequential(
+                                   nn.BatchNorm2d(highres_planes, momentum=bn_mom),
+                                   nn.ReLU(inplace=True),
                                    nn.Conv2d(highres_planes, planes * 4, kernel_size=3, stride=2, padding=1, bias=False),
-                                   nn.BatchNorm2d(planes * 4, momentum=bn_mom),
                                    )
 
         self.down4 = nn.Sequential(
+                                   nn.BatchNorm2d(highres_planes, momentum=bn_mom),
+                                   nn.ReLU(inplace=True),
                                    nn.Conv2d(highres_planes, planes * 4, kernel_size=3, stride=2, padding=1, bias=False),
+                                   
                                    nn.BatchNorm2d(planes * 4, momentum=bn_mom),
                                    nn.ReLU(inplace=True),
                                    nn.Conv2d(planes * 4, planes * 8, kernel_size=3, stride=2, padding=1, bias=False),
-                                   nn.BatchNorm2d(planes * 8, momentum=bn_mom),
                                    )
 
         self.layer3_1_ = self._make_layer(block, planes * 2, highres_planes, layers[2] // 2)
@@ -271,9 +288,9 @@ class DualResNet(nn.Module):
         self.spp = DAPPM(planes * 16, spp_planes, planes * 4)
 
         if self.augment:
-            self.seghead_extra = segmenthead(highres_planes, head_planes, num_classes, scale_factor=2)
+            self.seghead_extra = segmenthead(highres_planes, head_planes, num_classes, scale_factor_height=1, scale_factor_width=8)
 
-        self.final_layer = segmenthead(planes * 4, head_planes, num_classes, scale_factor=2)
+        self.final_layer = segmenthead(planes * 4, head_planes, num_classes, scale_factor_height=1, scale_factor_width=8)
 
 
         for m in self.modules():
@@ -288,9 +305,10 @@ class DualResNet(nn.Module):
         downsample = None
         if stride != 1 or inplanes != planes * block.expansion:
             downsample = nn.Sequential(
+                nn.BatchNorm2d(inplanes, momentum=bn_mom),
+                nn.ReLU(inplace=True),
                 nn.Conv2d(inplanes, planes * block.expansion,
                           kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(planes * block.expansion, momentum=bn_mom),
             )
 
         layers = []
@@ -307,50 +325,51 @@ class DualResNet(nn.Module):
 
     def forward(self, x):
 
-        width_output = x.shape[-1] // 2
-        height_output = x.shape[-2] // 2
+        width_output = x.shape[-1] // 8
+        height_output = x.shape[-2] // 1
         layers = []
 
-        x = self.conv1(x)
+        x0 = self.conv0(x)
+        x1 = self.conv1(x0)
 
-        x = self.layer1(x)
+        x = self.layer1(x1)
         layers.append(x)
 
-        x = self.layer2(self.relu(x))
+        x = self.layer2(x)
         layers.append(x)
   
-        x = self.layer3_1(self.relu(x))
+        x = self.layer3_1(x)
         layers.append(x)
-        x_ = self.layer3_1_(self.relu(layers[1]))
-        x = x + self.down3_1(self.relu(x_))
+        x_ = self.layer3_1_(layers[1])
+        x = x + self.down3_1(x_)
         x_ = x_ + F.interpolate(
-                        self.compression3_1(self.relu(layers[2])),
+                        self.compression3_1(layers[2]),
                         size=[height_output, width_output],
                         mode='bilinear')
 
-        x = self.layer3_2(self.relu(x))
+        x = self.layer3_2(x)
         layers.append(x)
-        x_ = self.layer3_2_(self.relu(x_))
-        x = x + self.down3_2(self.relu(x_))
+        x_ = self.layer3_2_(x_)
+        x = x + self.down3_2(x_)
         x_ = x_ + F.interpolate(
-                        self.compression3_2(self.relu(layers[3])),
+                        self.compression3_2(layers[3]),
                         size=[height_output, width_output],
                         mode='bilinear')
 
         temp = x_
 
-        x = self.layer4(self.relu(x))
+        x = self.layer4(x)
         layers.append(x)
-        x_ = self.layer4_(self.relu(x_))
-        x = x + self.down4(self.relu(x_))
+        x_ = self.layer4_(x_)
+        x = x + self.down4(x_)
         x_ = x_ + F.interpolate(
-                        self.compression4(self.relu(layers[4])),
+                        self.compression4(layers[4]),
                         size=[height_output, width_output],
                         mode='bilinear')
 
-        x_ = self.layer5_(self.relu(x_))
+        x_ = self.layer5_(x_)
         x = F.interpolate(
-                        self.spp(self.layer5(self.relu(x))),
+                        self.spp(self.layer5(x)),
                         size=[height_output, width_output],
                         mode='bilinear')
 

@@ -138,9 +138,9 @@ class Trainer():
         #         self.model = SalsaNext(self.parser.get_n_classes())
         #     else:
         #         self.model = SalsaNextUncertainty(self.parser.get_n_classes())
-        layers = [2, 2, 4, 1]
+        layers = [3, 4, 6, 3]
         with torch.no_grad():
-            self.model = DualResNet(BasicBlock, layers, augment=True)
+            self.model = DualResNet(BasicBlock, layers, augment=False)
     
         self.tb_logger = Logger(self.log + "/tb")
 
@@ -400,21 +400,20 @@ class Trainer():
                 hetero_l.update(hetero.mean().item(), in_vol.size(0))
                 output = output_mean
             else:
-                output, output_extra = model(in_vol)
+                output = model(in_vol)
                 loss_m = criterion(torch.log(output.clamp(min=1e-8)), proj_labels) + self.ls(output, proj_labels.long())
-                loss_extra = criterion(torch.log(output_extra.clamp(min=1e-8)), proj_labels) + self.ls(output_extra, proj_labels.long())
-                loss_all = loss_m + 0.4 * loss_extra
+                #loss_extra = criterion(torch.log(output_extra.clamp(min=1e-8)), proj_labels)
 
             optimizer.zero_grad()
             if self.n_gpus > 1:
                 idx = torch.ones(self.n_gpus).cuda()
-                loss_all.backward(idx)
+                loss_m.backward(idx)
             else:
-                loss_all.backward()
+                loss_m.backward()
             optimizer.step()
 
             # measure accuracy and record loss
-            loss = loss_all.mean()
+            loss = loss_m.mean()
             with torch.no_grad():
                 evaluator.reset()
                 argmax = output.argmax(dim=1)
@@ -563,7 +562,7 @@ class Trainer():
                     loss = wce + jacc
                     hetero_l.update(hetero.mean().item(), in_vol.size(0))
                 else:
-                    output, _ = model(in_vol)
+                    output = model(in_vol)
                     log_out = torch.log(output.clamp(min=1e-8))
                     jacc = self.ls(output, proj_labels)
                     wce = criterion(log_out, proj_labels)
