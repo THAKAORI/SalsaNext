@@ -57,14 +57,14 @@ class User():
         torch.nn.Module.dump_patches = True
         if self.uncertainty:
             self.model = SalsaNextUncertainty(self.parser.get_n_classes())
-            self.model = nn.DataParallel(self.model)
+            #self.model = nn.DataParallel(self.model)
             w_dict = torch.load(modeldir + "/SalsaNext",
                                 map_location=lambda storage, loc: storage)
             self.model.load_state_dict(w_dict['state_dict'], strict=True)
         else:
             self.model = SalsaNext(self.parser.get_n_classes())
-            self.model = nn.DataParallel(self.model)
-            w_dict = torch.load(modeldir + "/SalsaNext",
+            #self.model = nn.DataParallel(self.model)
+            w_dict = torch.load(modeldir + "/SalsaNext_valid_best",
                                 map_location=lambda storage, loc: storage)
             self.model.load_state_dict(w_dict['state_dict'], strict=True)
 
