@@ -117,6 +117,7 @@ class SemanticKittiData(Dataset):
     # placeholder for filenames
     self.scan_files = []
     self.label_files = []
+    self.pose_list = np.empty((0, 12))
 
     # fill in with names, checking that all sequences are complete
     for seq in self.sequences:
@@ -128,12 +129,17 @@ class SemanticKittiData(Dataset):
       # get paths for each
       scan_path = os.path.join(self.root, seq, "velodyne")
       label_path = os.path.join(self.root, seq, "labels")
+      pose_path = os.path.join(self.root, seq, "poses.txt")
 
       # get files
       scan_files = [os.path.join(dp, f) for dp, dn, fn in os.walk(
           os.path.expanduser(scan_path)) for f in fn if is_scan(f)]
       label_files = [os.path.join(dp, f) for dp, dn, fn in os.walk(
           os.path.expanduser(label_path)) for f in fn if is_label(f)]
+
+      with open(pose_path, mode='rt', encoding='utf-8') as f:
+        for line in f:
+          self.pose_list = np.vstack((self.pose_list, [float(num) for num in line.split()]))
 
       # check all scans have labels
       if self.gt:
@@ -149,6 +155,7 @@ class SemanticKittiData(Dataset):
 
     print("Using {} scans from sequences {}".format(len(self.scan_files),
                                                     self.sequences))
+    print("Using {} poses".format(self.pose_list.shape[0]))
 
   def __getitem__(self, index):
     # get item in tensor shape
@@ -213,7 +220,7 @@ class SemanticKittiData(Dataset):
       proj_labels = []
 
     # return
-    return proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels
+    return proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels, scan.points, scan_file, self.pose_list[index], scan.sem_label
     
   def __len__(self):
     return len(self.scan_files)

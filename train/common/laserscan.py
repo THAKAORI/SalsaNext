@@ -27,7 +27,9 @@ class LaserScan:
     def reset(self):
         """ Reset scan members. """
         self.points = np.zeros((0, 3), dtype=np.float32)  # [m, 3]: x, y, z
+        self.prepoints = np.zeros((0, 3), dtype=np.float32)  # [m, 3]: x, y, z
         self.remissions = np.zeros((0, 1), dtype=np.float32)  # [m ,1]: remission
+        self.preremissions = np.zeros((0, 1), dtype=np.float32)  # [m ,1]: remission
 
         # projected range image - [H,W] range (-1 is no data)
         self.proj_range = np.full((self.proj_H, self.proj_W), -1,
@@ -52,6 +54,8 @@ class LaserScan:
         # [H,W] index (-1 is no data)
         self.proj_idx = np.full((self.proj_H, self.proj_W), -1,
                                 dtype=np.int32)
+        self.preproj_idx = np.full((self.proj_H, self.proj_W), -1,
+                                dtype=np.int32)
 
         # for each point, where it is in the range image
         self.proj_x = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: x
@@ -60,6 +64,9 @@ class LaserScan:
         # mask containing for each pixel, if it contains a point or not
         self.proj_mask = np.zeros((self.proj_H, self.proj_W),
                                   dtype=np.int32)  # [H,W] mask
+        self.preproj_mask = np.zeros((self.proj_H, self.proj_W),
+                                  dtype=np.int32)  # [H,W] mask
+
 
     def size(self):
         """ Return the size of the point cloud. """
@@ -68,7 +75,7 @@ class LaserScan:
     def __len__(self):
         return self.size()
 
-    def open_scan(self, filename):
+    def open_scan(self, filename, prefile, prepose, curpose):
         """ Open raw scan and fill in attributes
         """
         # reset just in case there was an open structure
@@ -95,9 +102,41 @@ class LaserScan:
             points = np.delete(points,self.points_to_drop,axis=0)
             remissions = np.delete(remissions,self.points_to_drop)
 
-        self.set_points(points, remissions)
+        if(prefile != None):
+            prescan = np.fromfile(prefile, dtype=np.float32)
+            prescan = prescan.reshape((-1, 4))
+        else:
+            prescan = np.zeros_like(scan, dtype=np.float32)
 
-    def set_points(self, points, remissions=None):
+        # put in attribute
+        prepoints = prescan[:, 0:3]  # get xyz
+        prepoints = self.transformPoints(prepoints, prepose, curpose)
+        preremissions = prescan[:, 3]  # get remission
+        # if self.drop_points is not False:
+        #     self.points_to_drop = np.random.randint(0, len(points)-1,int(len(prepoints)*self.drop_points))
+        #     points = np.delete(points,self.points_to_drop,axis=0)
+        #     remissions = np.delete(remissions,self.points_to_drop)
+
+        self.set_points(points, remissions, prepoints, preremissions)
+
+    def transformPoints(self, prepoints, prepose, curpose):
+        trans_f = prepose.reshape(3, 4)
+        trans_t = curpose.reshape(3, 4)
+        trans_f = trans_f[:, [2, 0, 1, 3]]
+        trans_f[:, 1] *= -1
+        trans_f[:, 2] *= -1
+        trans_t = trans_t[:, [2, 0, 1, 3]]
+        trans_t[:, 1] *= -1
+        trans_t[:, 2] *= -1
+
+        world_points = np.dot(np.pad(prepoints, ((0,0),(0,1)), 'constant', constant_values=1), trans_f.T)
+
+        shift = -trans_t[:, 3]
+        rot = np.linalg.inv(trans_t[:, 0:3])
+        anocamera_points = np.dot(world_points+shift, rot.T)
+        return anocamera_points
+
+    def set_points(self, points, remissions=None, prepoints=None, preremissions=None):
         """ Set scan attributes (instead of opening from file)
         """
         # reset just in case there was an open structure
@@ -110,11 +149,21 @@ class LaserScan:
         # check remission makes sense
         if remissions is not None and not isinstance(remissions, np.ndarray):
             raise TypeError("Remissions should be numpy array")
+        
+        # check scan makes sense
+        if not isinstance(prepoints, np.ndarray):
+            raise TypeError("Scan should be numpy array")
+
+        # check remission makes sense
+        if preremissions is not None and not isinstance(preremissions, np.ndarray):
+            raise TypeError("Remissions should be numpy array")
 
         # put in attribute
         self.points = points  # get
+        self.prepoints = prepoints
         if self.flip_sign:
             self.points[:, 1] = -self.points[:, 1]
+            self.prepoints[:, 1] = -self.prepoints[:, 1]
         if self.DA:
             jitter_x = random.uniform(-5,5)
             jitter_y = random.uniform(-3, 3)
@@ -122,19 +171,25 @@ class LaserScan:
             self.points[:, 0] += jitter_x
             self.points[:, 1] += jitter_y
             self.points[:, 2] += jitter_z
+            self.prepoints[:, 0] += jitter_x
+            self.prepoints[:, 1] += jitter_y
+            self.prepoints[:, 2] += jitter_z
         if self.rot:
-            self.points = self.points @ R.random(random_state=1234).as_dcm().T
+            rot = R.random(random_state=1234).as_dcm().T
+            self.points = self.points @ rot
+            self.prepoints = self.prepoints @ rot
         if remissions is not None:
             self.remissions = remissions  # get remission
+            self.preremissions = preremissions
             #if self.DA:
             #    self.remissions = self.remissions[::-1].copy()
         else:
             self.remissions = np.zeros((points.shape[0]), dtype=np.float32)
+            self.preremissions = np.zeros((points.shape[0]), dtype=np.float32)
 
         # if projection is wanted, then do it and fill in the structure
         if self.project:
             self.do_range_projection()
-            self.get_segment_angle()
 
     def do_range_projection(self):
         """ Project a pointcloud into a spherical projection image.projection.
@@ -197,6 +252,45 @@ class LaserScan:
         self.proj_remission[proj_y, proj_x] = remission
         self.proj_idx[proj_y, proj_x] = indices
         self.proj_mask = (self.proj_idx > 0).astype(np.int32)
+
+        # get depth of all points
+        depth = np.clip(np.linalg.norm(self.prepoints, 2, axis=1), 1e-5, None)
+
+        # get scan components
+        scan_x = self.prepoints[:, 0]
+        scan_y = self.prepoints[:, 1]
+        scan_z = self.prepoints[:, 2]
+
+        # get angles of all points
+        yaw = -np.arctan2(scan_y, scan_x)
+        pitch = np.arcsin(scan_z / depth)
+
+        # get projections in image coords
+        proj_x = 0.5 * (yaw / np.pi + 1.0)  # in [0.0, 1.0]
+        proj_y = 1.0 - (pitch + abs(fov_down)) / fov  # in [0.0, 1.0]
+
+        # scale to image size using angular resolution
+        proj_x *= self.proj_W  # in [0.0, W]
+        proj_y *= self.proj_H  # in [0.0, H]
+
+        # round and clamp for use as index
+        proj_x = np.floor(proj_x)
+        proj_x = np.minimum(self.proj_W - 1, proj_x)
+        proj_x = np.maximum(0, proj_x).astype(np.int32)  # in [0,W-1]
+
+        proj_y = np.floor(proj_y)
+        proj_y = np.minimum(self.proj_H - 1, proj_y)
+        proj_y = np.maximum(0, proj_y).astype(np.int32)  # in [0,H-1]
+
+        # order in decreasing depth
+        indices = np.arange(depth.shape[0])
+        order = np.argsort(depth)[::-1]
+        indices = indices[order]
+        proj_y = proj_y[order]
+        proj_x = proj_x[order]
+
+        self.preproj_idx[proj_y, proj_x] = indices
+        self.preproj_mask = (self.preproj_idx > 0).astype(np.int32)
 
     def get_segment_angle(self):
 #         proj_x = self.proj_xyz[:, :, 0]
@@ -283,16 +377,21 @@ class SemLaserScan(LaserScan):
         # semantic labels
         self.sem_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
         self.sem_label_color = np.zeros((0, 3), dtype=np.float32)  # [m ,3]: color
+        # pre semantic labels
+        self.presem_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
 
         # instance labels
         self.inst_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
         self.inst_label_color = np.zeros((0, 3), dtype=np.float32)  # [m ,3]: color
+        self.preinst_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
 
         # projection color with semantic labels
         self.proj_sem_label = np.zeros((self.proj_H, self.proj_W),
                                        dtype=np.int32)  # [H,W]  label
         self.proj_sem_color = np.zeros((self.proj_H, self.proj_W, 3),
                                        dtype=np.float)  # [H,W,3] color
+        self.preproj_sem_label = np.zeros((self.proj_H, self.proj_W),
+                                       dtype=np.int32)  # [H,W]  label
 
         # projection color with instance labels
         self.proj_inst_label = np.zeros((self.proj_H, self.proj_W),
@@ -300,7 +399,7 @@ class SemLaserScan(LaserScan):
         self.proj_inst_color = np.zeros((self.proj_H, self.proj_W, 3),
                                         dtype=np.float)  # [H,W,3] color
 
-    def open_label(self, filename):
+    def open_label(self, filename, prelabelfile):
         """ Open raw scan and fill in attributes
         """
         # check filename is string
@@ -318,10 +417,20 @@ class SemLaserScan(LaserScan):
 
         if self.drop_points is not False:
             label = np.delete(label,self.points_to_drop)
-        # set it
-        self.set_label(label)
 
-    def set_label(self, label):
+        
+
+        # if all goes well, open label
+        if prelabelfile != None:
+            prelabel = np.fromfile(prelabelfile, dtype=np.int32)
+        else:
+            prelabel = np.zeros(self.prepoints.shape[0], dtype=np.int32)
+        prelabel = prelabel.reshape((-1))
+
+        # set it
+        self.set_label(label, prelabel)
+
+    def set_label(self, label, prelabel):
         """ Set points for label not from file but from np
         """
         # check label makes sense
@@ -335,6 +444,19 @@ class SemLaserScan(LaserScan):
         else:
             print("Points shape: ", self.points.shape)
             print("Label shape: ", label.shape)
+            raise ValueError("Scan and Label don't contain same number of points")
+        
+        # check label makes sense
+        if not isinstance(prelabel, np.ndarray):
+            raise TypeError("Label should be numpy array")
+
+        # only fill in attribute if the right size
+        if prelabel.shape[0] == self.prepoints.shape[0]:
+            self.presem_label = prelabel & 0xFFFF  # semantic label in lower half
+            self.preinst_label = prelabel >> 16  # instance id in upper half
+        else:
+            print("Points shape: ", self.prepoints.shape)
+            print("Label shape: ", prelabel.shape)
             raise ValueError("Scan and Label don't contain same number of points")
 
         # sanity check
@@ -363,3 +485,6 @@ class SemLaserScan(LaserScan):
         # instances
         self.proj_inst_label[mask] = self.inst_label[self.proj_idx[mask]]
         self.proj_inst_color[mask] = self.inst_color_lut[self.inst_label[self.proj_idx[mask]]]
+
+        premask = self.preproj_idx >= 0
+        self.preproj_sem_label[premask] = self.presem_label[self.preproj_idx[premask]]

@@ -18,7 +18,7 @@ import numbers
 import types
 from collections.abc import Sequence, Iterable
 import warnings
-
+import time
 
 EXTENSIONS_SCAN = ['.bin']
 EXTENSIONS_LABEL = ['.label']
@@ -119,9 +119,13 @@ class SemanticKitti(Dataset):
     # placeholder for filenames
     self.scan_files = []
     self.label_files = []
+    self.pose_list = np.empty((0, 12))
+    self.seqstartind = []
 
     # fill in with names, checking that all sequences are complete
+    file_num = 0
     for seq in self.sequences:
+      self.seqstartind.append(file_num)
       # to string
       seq = '{0:02d}'.format(int(seq))
 
@@ -130,12 +134,17 @@ class SemanticKitti(Dataset):
       # get paths for each
       scan_path = os.path.join(self.root, seq, "velodyne")
       label_path = os.path.join(self.root, seq, "labels")
+      pose_path = os.path.join(self.root, seq, "poses.txt")
 
       # get files
       scan_files = [os.path.join(dp, f) for dp, dn, fn in os.walk(
           os.path.expanduser(scan_path)) for f in fn if is_scan(f)]
       label_files = [os.path.join(dp, f) for dp, dn, fn in os.walk(
           os.path.expanduser(label_path)) for f in fn if is_label(f)]
+
+      with open(pose_path, mode='rt', encoding='utf-8') as f:
+        for line in f:
+          self.pose_list = np.vstack((self.pose_list, [float(num) for num in line.split()]))
 
       # check all scans have labels
       if self.gt:
@@ -144,6 +153,7 @@ class SemanticKitti(Dataset):
       # extend list
       self.scan_files.extend(scan_files)
       self.label_files.extend(label_files)
+      file_num += len(scan_files)
 
     # sort for correspondance
     self.scan_files.sort()
@@ -151,12 +161,33 @@ class SemanticKitti(Dataset):
 
     print("Using {} scans from sequences {}".format(len(self.scan_files),
                                                     self.sequences))
+    print("Using {} poses".format(self.pose_list.shape[0]))
+
+  def labeltoprobmap(self, label):
+    H, W = label.shape
+
+    labelnum = 20
+
+    probmap = np.array([np.identity(labelnum)[row] for row in label], dtype=np.float32)
+    return probmap
+    
 
   def __getitem__(self, index):
     # get item in tensor shape
     scan_file = self.scan_files[index]
     if self.gt:
       label_file = self.label_files[index]
+    
+    if(index in self.seqstartind):
+      prescan_file = None
+      pre_pose = np.array([1,0,0,0,0,1,0,0,0,0,1,0])
+      cur_pose = np.array([1,0,0,0,0,1,0,0,0,0,1,0])
+      prelabel_file = None
+    else:
+      prescan_file = self.scan_files[index - 1]
+      pre_pose = self.pose_list[index - 1]
+      cur_pose = self.pose_list[index]
+      prelabel_file = self.label_files[index - 1]
 
     # open a semantic laserscan
     DA = False
@@ -195,12 +226,15 @@ class SemanticKitti(Dataset):
                        drop_points=drop_points)
 
     # open and obtain scan
-    scan.open_scan(scan_file)
+    scan.open_scan(scan_file, prescan_file, pre_pose, cur_pose)
+  
     if self.gt:
-      scan.open_label(label_file)
+      scan.open_label(label_file, prelabel_file)
       # map unused classes to used classes (also for projection)
       scan.sem_label = self.map(scan.sem_label, self.learning_map)
       scan.proj_sem_label = self.map(scan.proj_sem_label, self.learning_map)
+      scan.presem_label = self.map(scan.presem_label, self.learning_map)
+      scan.preproj_sem_label = self.map(scan.preproj_sem_label, self.learning_map)
 
     # make a tensor of the uncompressed data (with the max num points)
     unproj_n_points = scan.points.shape[0]
@@ -218,13 +252,14 @@ class SemanticKitti(Dataset):
 
     # get points and labels
     proj_range = torch.from_numpy(scan.proj_range).clone()
-    proj_segment_angle = torch.from_numpy(scan.segment_angle).clone()
     proj_xyz = torch.from_numpy(scan.proj_xyz).clone()
     proj_remission = torch.from_numpy(scan.proj_remission).clone()
     proj_mask = torch.from_numpy(scan.proj_mask)
+    preproj_mask = torch.from_numpy(scan.preproj_mask)
     if self.gt:
       proj_labels = torch.from_numpy(scan.proj_sem_label).clone()
       proj_labels = proj_labels * proj_mask
+      preproj_labels = torch.from_numpy(self.labeltoprobmap(scan.preproj_sem_label)).clone()
     else:
       proj_labels = []
     proj_x = torch.full([self.max_points], -1, dtype=torch.long)
@@ -233,7 +268,8 @@ class SemanticKitti(Dataset):
     proj_y[:unproj_n_points] = torch.from_numpy(scan.proj_y)
     proj = torch.cat([proj_range.unsqueeze(0).clone(),
                       proj_xyz.clone().permute(2, 0, 1),
-                      proj_remission.unsqueeze(0).clone()])
+                      proj_remission.unsqueeze(0).clone(),
+                      preproj_labels.clone().permute(2, 0, 1)])
                       #proj_segment_angle.unsqueeze(0).clone()])
     proj = (proj - self.sensor_img_means[:, None, None]
             ) / self.sensor_img_stds[:, None, None]
