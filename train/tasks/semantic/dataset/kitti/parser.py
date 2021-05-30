@@ -233,8 +233,6 @@ class SemanticKitti(Dataset):
       # map unused classes to used classes (also for projection)
       scan.sem_label = self.map(scan.sem_label, self.learning_map)
       scan.proj_sem_label = self.map(scan.proj_sem_label, self.learning_map)
-      scan.presem_label = self.map(scan.presem_label, self.learning_map)
-      scan.preproj_sem_label = self.map(scan.preproj_sem_label, self.learning_map)
 
     # make a tensor of the uncompressed data (with the max num points)
     unproj_n_points = scan.points.shape[0]
@@ -254,12 +252,15 @@ class SemanticKitti(Dataset):
     proj_range = torch.from_numpy(scan.proj_range).clone()
     proj_xyz = torch.from_numpy(scan.proj_xyz).clone()
     proj_remission = torch.from_numpy(scan.proj_remission).clone()
+    preproj_range = torch.from_numpy(scan.preproj_range).clone()
+    preproj_xyz = torch.from_numpy(scan.preproj_xyz).clone()
+    preproj_remission = torch.from_numpy(scan.preproj_remission).clone()
     proj_mask = torch.from_numpy(scan.proj_mask)
-    preproj_mask = torch.from_numpy(scan.preproj_mask)
+    #preproj_mask = torch.from_numpy(scan.preproj_mask)
     if self.gt:
       proj_labels = torch.from_numpy(scan.proj_sem_label).clone()
       proj_labels = proj_labels * proj_mask
-      preproj_labels = torch.from_numpy(self.labeltoprobmap(scan.preproj_sem_label)).clone()
+      #preproj_labels = torch.from_numpy(self.labeltoprobmap(scan.preproj_sem_label)).clone()
     else:
       proj_labels = []
     proj_x = torch.full([self.max_points], -1, dtype=torch.long)
@@ -269,7 +270,9 @@ class SemanticKitti(Dataset):
     proj = torch.cat([proj_range.unsqueeze(0).clone(),
                       proj_xyz.clone().permute(2, 0, 1),
                       proj_remission.unsqueeze(0).clone(),
-                      preproj_labels.clone().permute(2, 0, 1)])
+                      preproj_range.unsqueeze(0).clone(),
+                      preproj_xyz.clone().permute(2, 0, 1),
+                      preproj_remission.unsqueeze(0).clone()])
                       #proj_segment_angle.unsqueeze(0).clone()])
     proj = (proj - self.sensor_img_means[:, None, None]
             ) / self.sensor_img_stds[:, None, None]
