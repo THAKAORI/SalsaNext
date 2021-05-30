@@ -141,3 +141,39 @@ class DataAnalysis():
         segment_angle_std = np.sqrt(segment_angle_std)
 
         print("average segment std:", segment_angle_std)
+    def datao3d(self):
+        train_set = self.parser.train_dataset
+
+        train_set_size = len(train_set)
+
+        proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels, points0, scan_file0, pose0 = train_set[0]
+        proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels, points1, scan_file1, pose1 = train_set[1]
+
+        print(scan_file0)
+        print(pose0)
+        print(scan_file1)
+        print(pose1)
+
+        N0, _ = points0.shape
+
+        colors0 = np.tile([1,0,0], (N0, 1))
+
+        N1, _ = points1.shape
+
+        colors1 = np.tile([0,1,0], (N1, 1))
+
+        points = np.vstack((points0, points1))
+        colors = np.vstack((colors0, colors1))
+
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        pcd.colors = o3d.utility.Vector3dVector(colors)
+
+        return pcd
+    
+    def getpointspose(self, i):
+        train_set = self.parser.valid_dataset
+
+        proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels, points, scan_file, pose, sem_label = train_set[i]
+
+        return points, pose, scan_file, sem_label
