@@ -213,7 +213,7 @@ class SemanticKittiData(Dataset):
       proj_labels = []
 
     # return
-    return proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels
+    return proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels, scan.points, scan_file, scan.sem_label
     
   def __len__(self):
     return len(self.scan_files)

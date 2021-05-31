@@ -174,6 +174,6 @@ class DataAnalysis():
     def getpointspose(self, i):
         train_set = self.parser.valid_dataset
 
-        proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels, points, scan_file, pose, sem_label = train_set[i]
+        proj_range, proj_segment_angle, proj_xyz, proj_remission, proj_mask, proj_labels, points, scan_file, sem_label = train_set[i]
 
-        return points, pose, scan_file, sem_label
+        return points, scan_file, sem_label
