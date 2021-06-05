@@ -15,6 +15,8 @@ class LaserScan:
         self.project = project
         self.proj_H = H
         self.proj_W = W
+        self.proj_H_double = H * 2
+        self.proj_W_double = W * 2
         self.proj_fov_up = fov_up
         self.proj_fov_down = fov_down
         self.DA = DA
@@ -30,27 +32,29 @@ class LaserScan:
         self.remissions = np.zeros((0, 1), dtype=np.float32)  # [m ,1]: remission
 
         # projected range image - [H,W] range (-1 is no data)
-        self.proj_range = np.full((self.proj_H, self.proj_W), -1,
+        self.proj_range = np.full((self.proj_H_double, self.proj_W_double), -1,
                                   dtype=np.float32)
 
         # segment_angle - [H,W] range (-1 is no data)
-        self.segment_angle = np.full((self.proj_H, self.proj_W), -1,
+        self.segment_angle = np.full((self.proj_H_double, self.proj_W_double), -1,
                                   dtype=np.float32)
 
         # unprojected range (list of depths for each point)
         self.unproj_range = np.zeros((0, 1), dtype=np.float32)
 
         # projected point cloud xyz - [H,W,3] xyz coord (-1 is no data)
-        self.proj_xyz = np.full((self.proj_H, self.proj_W, 3), -1,
+        self.proj_xyz = np.full((self.proj_H_double, self.proj_W_double, 3), -1,
                                 dtype=np.float32)
 
         # projected remission - [H,W] intensity (-1 is no data)
-        self.proj_remission = np.full((self.proj_H, self.proj_W), -1,
+        self.proj_remission = np.full((self.proj_H_double, self.proj_W_double), -1,
                                       dtype=np.float32)
 
         # projected index (for each pixel, what I am in the pointcloud)
         # [H,W] index (-1 is no data)
         self.proj_idx = np.full((self.proj_H, self.proj_W), -1,
+                                dtype=np.int32)
+        self.proj_idx_double = np.full((self.proj_H_double, self.proj_W_double), -1,
                                 dtype=np.int32)
 
         # for each point, where it is in the range image
@@ -59,6 +63,8 @@ class LaserScan:
 
         # mask containing for each pixel, if it contains a point or not
         self.proj_mask = np.zeros((self.proj_H, self.proj_W),
+                                  dtype=np.int32)  # [H,W] mask
+        self.proj_mask_double = np.zeros((self.proj_H_double, self.proj_W_double),
                                   dtype=np.int32)  # [H,W] mask
 
     def size(self):
@@ -134,7 +140,7 @@ class LaserScan:
         # if projection is wanted, then do it and fill in the structure
         if self.project:
             self.do_range_projection()
-            self.get_segment_angle()
+            #self.get_segment_angle()
 
     def do_range_projection(self):
         """ Project a pointcloud into a spherical projection image.projection.
@@ -163,18 +169,30 @@ class LaserScan:
         proj_x = 0.5 * (yaw / np.pi + 1.0)  # in [0.0, 1.0]
         proj_y = 1.0 - (pitch + abs(fov_down)) / fov  # in [0.0, 1.0]
 
+        proj_x_half = proj_x * self.proj_W
+        proj_y_half = proj_y * self.proj_H
+
         # scale to image size using angular resolution
-        proj_x *= self.proj_W  # in [0.0, W]
-        proj_y *= self.proj_H  # in [0.0, H]
+        proj_x *= self.proj_W_double  # in [0.0, W]
+        proj_y *= self.proj_H_double  # in [0.0, H]
+
+        # round and clamp for use as index
+        proj_x_half = np.floor(proj_x_half)
+        proj_x_half = np.minimum(self.proj_W - 1, proj_x_half)
+        proj_x_half = np.maximum(0, proj_x_half).astype(np.int32)  # in [0,W-1]
+
+        proj_y_half = np.floor(proj_y_half)
+        proj_y_half = np.minimum(self.proj_H - 1, proj_y_half)
+        proj_y_half = np.maximum(0, proj_y_half).astype(np.int32)  # in [0,H-1]
 
         # round and clamp for use as index
         proj_x = np.floor(proj_x)
-        proj_x = np.minimum(self.proj_W - 1, proj_x)
+        proj_x = np.minimum(self.proj_W_double - 1, proj_x)
         proj_x = np.maximum(0, proj_x).astype(np.int32)  # in [0,W-1]
         self.proj_x = np.copy(proj_x)  # store a copy in orig order
 
         proj_y = np.floor(proj_y)
-        proj_y = np.minimum(self.proj_H - 1, proj_y)
+        proj_y = np.minimum(self.proj_H_double - 1, proj_y)
         proj_y = np.maximum(0, proj_y).astype(np.int32)  # in [0,H-1]
         self.proj_y = np.copy(proj_y)  # stope a copy in original order
 
@@ -188,6 +206,8 @@ class LaserScan:
         indices = indices[order]
         points = self.points[order]
         remission = self.remissions[order]
+        proj_y_half = proj_y_half[order]
+        proj_x_half = proj_x_half[order]
         proj_y = proj_y[order]
         proj_x = proj_x[order]
 
@@ -195,8 +215,11 @@ class LaserScan:
         self.proj_range[proj_y, proj_x] = depth
         self.proj_xyz[proj_y, proj_x] = points
         self.proj_remission[proj_y, proj_x] = remission
-        self.proj_idx[proj_y, proj_x] = indices
+        #self.proj_idx[proj_y, proj_x] = indices
+        self.proj_idx[proj_y_half, proj_x_half] = indices
         self.proj_mask = (self.proj_idx > 0).astype(np.int32)
+        self.proj_idx_double[proj_y, proj_x] = indices
+        self.proj_mask_double = (self.proj_idx_double > 0).astype(np.int32)
 
     def get_segment_angle(self):
 #         proj_x = self.proj_xyz[:, :, 0]

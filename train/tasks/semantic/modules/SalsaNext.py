@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class ResContextBlock(nn.Module):
-    def __init__(self, in_filters, out_filters):
+    def __init__(self, in_filters, out_filters, downsample=False):
         super(ResContextBlock, self).__init__()
         self.conv1 = nn.Conv2d(in_filters, out_filters, kernel_size=(1, 1), stride=1)
         self.act1 = nn.LeakyReLU()
@@ -21,6 +21,10 @@ class ResContextBlock(nn.Module):
         self.act3 = nn.LeakyReLU()
         self.bn2 = nn.BatchNorm2d(out_filters)
 
+        self.downsample = downsample
+
+        if self.downsample:
+            self.pool = nn.MaxPool2d(kernel_size=(2, 2), stride=2, padding=0)
 
     def forward(self, x):
 
@@ -36,6 +40,10 @@ class ResContextBlock(nn.Module):
         resA2 = self.bn2(resA)
 
         output = shortcut + resA2
+        
+        if self.downsample:
+            output = self.pool(output)
+        
         return output
 
 
@@ -174,7 +182,7 @@ class SalsaNext(nn.Module):
         super(SalsaNext, self).__init__()
         self.nclasses = nclasses
 
-        self.downCntx = ResContextBlock(5, 32)
+        self.downCntx = ResContextBlock(5, 32, downsample=True)
         self.downCntx2 = ResContextBlock(32, 32)
         self.downCntx3 = ResContextBlock(32, 32)
 

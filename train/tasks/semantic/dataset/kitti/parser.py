@@ -222,6 +222,7 @@ class SemanticKitti(Dataset):
     proj_xyz = torch.from_numpy(scan.proj_xyz).clone()
     proj_remission = torch.from_numpy(scan.proj_remission).clone()
     proj_mask = torch.from_numpy(scan.proj_mask)
+    proj_mask_double = torch.from_numpy(scan.proj_mask_double)
     if self.gt:
       proj_labels = torch.from_numpy(scan.proj_sem_label).clone()
       proj_labels = proj_labels * proj_mask
@@ -237,7 +238,7 @@ class SemanticKitti(Dataset):
                       #proj_segment_angle.unsqueeze(0).clone()])
     proj = (proj - self.sensor_img_means[:, None, None]
             ) / self.sensor_img_stds[:, None, None]
-    proj = proj * proj_mask.float()
+    proj = proj * proj_mask_double.float()
 
     # get name and sequence
     path_norm = os.path.normpath(scan_file)
@@ -246,7 +247,7 @@ class SemanticKitti(Dataset):
     path_name = path_split[-1].replace(".bin", ".label")
 
     # return
-    return proj, proj_mask, proj_labels, unproj_labels, path_seq, path_name, proj_x, proj_y, proj_range, unproj_range, proj_xyz, unproj_xyz, proj_remission, unproj_remissions, unproj_n_points
+    return proj, proj_mask, proj_mask_double, proj_labels, unproj_labels, path_seq, path_name, proj_x, proj_y, proj_range, unproj_range, proj_xyz, unproj_xyz, proj_remission, unproj_remissions, unproj_n_points
 
   def __len__(self):
     return len(self.scan_files)

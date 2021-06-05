@@ -161,8 +161,8 @@ class Trainer():
             self.multi_gpu = True
             self.n_gpus = torch.cuda.device_count()
 
-        print("batch_size, channel, height, width", 18, 5, 64, 2048)
-        print(summary(self.model, (18, 5, 64, 2048)))
+        print("batch_size, channel, height, width", 18, 5, 128, 4096)
+        print(summary(self.model, (18, 5,  128, 4096)))
 
         self.criterion = nn.NLLLoss(weight=self.loss_w).to(self.device)
         self.ls = Lovasz_softmax(ignore=0).to(self.device)
@@ -219,14 +219,14 @@ class Trainer():
         return color_range.reshape(256, 1, 3)
 
     @staticmethod
-    def make_log_img(depth, mask, pred, gt, color_fn):
+    def make_log_img(depth, mask, mask_double, pred, gt, color_fn):
         # input should be [depth, pred, gt]
         # make range image (normalized to 0,1 for saving)
         depth = (cv2.normalize(depth, None, alpha=0, beta=1,
                                norm_type=cv2.NORM_MINMAX,
                                dtype=cv2.CV_32F) * 255.0).astype(np.uint8)
         out_img = cv2.applyColorMap(
-            depth, Trainer.get_mpl_colormap('viridis')) * mask[..., None]
+            depth, Trainer.get_mpl_colormap('viridis')) * mask_double[..., None]
         # make label prediction
         pred_color = color_fn((pred * mask).astype(np.int32))
         out_img = np.concatenate([out_img, pred_color], axis=0)
@@ -377,7 +377,7 @@ class Trainer():
         model.train()
 
         end = time.time()
-        for i, (in_vol, proj_mask, proj_labels, _, path_seq, path_name, _, _, _, _, _, _, _, _, _) in enumerate(train_loader):
+        for i, (in_vol, proj_mask, _, proj_labels, _, path_seq, path_name, _, _, _, _, _, _, _, _, _) in enumerate(train_loader):
             # measure data loading time
             self.data_time_t.update(time.time() - end)
             if not self.multi_gpu and self.gpu:
@@ -385,6 +385,7 @@ class Trainer():
                 #proj_mask = proj_mask.cuda()
             if self.gpu:
                 proj_labels = proj_labels.cuda().long()
+            #print(proj_labels.shape)
 
             # compute output
             if self.uncertainty:
@@ -537,7 +538,7 @@ class Trainer():
 
         with torch.no_grad():
             end = time.time()
-            for i, (in_vol, proj_mask, proj_labels, _, path_seq, path_name, _, _, _, _, _, _, _, _, _) in enumerate(val_loader):
+            for i, (in_vol, proj_mask, proj_mask_double, proj_labels, _, path_seq, path_name, _, _, _, _, _, _, _, _, _) in enumerate(val_loader):
                 if not self.multi_gpu and self.gpu:
                     in_vol = in_vol.cuda()
                     proj_mask = proj_mask.cuda()
@@ -574,7 +575,7 @@ class Trainer():
 
                 if save_scans:
                     # get the first scan in batch and project points
-                    mask_np = proj_mask[0].cpu().numpy()
+                    mask_np = proj_mask_double[0].cpu().numpy()
                     depth_np = in_vol[0][0].cpu().numpy()
                     pred_np = argmax[0].cpu().numpy()
                     gt_np = proj_labels[0].cpu().numpy()
