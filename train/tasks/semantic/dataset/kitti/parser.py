@@ -273,7 +273,7 @@ class SemanticKitti(Dataset):
     proj = torch.cat([proj_range.unsqueeze(0).clone(),
                       proj_xyz.clone().permute(2, 0, 1),
                       proj_remission.unsqueeze(0).clone(),
-                      preproj_labels])
+                      preproj_labels.clone().permute(2, 0, 1)])
                       #proj_segment_angle.unsqueeze(0).clone()])
     proj = (proj - self.sensor_img_means[:, None, None]
             ) / self.sensor_img_stds[:, None, None]
