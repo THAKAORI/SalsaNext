@@ -124,6 +124,46 @@ class LaserScan:
         #     remissions = np.delete(remissions,self.points_to_drop)
 
         self.set_points(points, remissions, prepoints, preremissions)
+    
+    def open_scan_eval(self, filename):
+        """ Open raw scan and fill in attributes
+        """
+        # reset just in case there was an open structure
+        self.reset()
+
+        # check filename is string
+        if not isinstance(filename, str):
+            raise TypeError("Filename should be string type, "
+                            "but was {type}".format(type=str(type(filename))))
+
+        # check extension is a laserscan
+        if not any(filename.endswith(ext) for ext in self.EXTENSIONS_SCAN):
+            raise RuntimeError("Filename extension is not valid scan file.")
+
+        # if all goes well, open pointcloud
+        scan = np.fromfile(filename, dtype=np.float32)
+        scan = scan.reshape((-1, 4))
+
+        # put in attribute
+        points = scan[:, 0:3]  # get xyz
+        remissions = scan[:, 3]  # get remission
+        if self.drop_points is not False:
+            self.points_to_drop = np.random.randint(0, len(points)-1,int(len(points)*self.drop_points))
+            points = np.delete(points,self.points_to_drop,axis=0)
+            remissions = np.delete(remissions,self.points_to_drop)
+
+        
+        prescan = np.zeros_like(scan, dtype=np.float32)
+
+        # put in attribute
+        prepoints = prescan[:, 0:3]  # get x,y,z
+        preremissions = prescan[:, 3]  # get remission
+        # if self.drop_points is not False:
+        #     self.points_to_drop = np.random.randint(0, len(points)-1,int(len(prepoints)*self.drop_points))
+        #     points = np.delete(points,self.points_to_drop,axis=0)
+        #     remissions = np.delete(remissions,self.points_to_drop)
+
+        self.set_points(points, remissions, prepoints, preremissions)
 
     def transformPoints(self, prepoints, prepose, curpose):
         trans_f = prepose.reshape(3, 4)
@@ -412,6 +452,37 @@ class SemLaserScan(LaserScan):
                                         dtype=np.float)  # [H,W,3] color
 
     def open_label(self, filename, prelabelfile):
+        """ Open raw scan and fill in attributes
+        """
+        # check filename is string
+        if not isinstance(filename, str):
+            raise TypeError("Filename should be string type, "
+                            "but was {type}".format(type=str(type(filename))))
+
+        # check extension is a laserscan
+        if not any(filename.endswith(ext) for ext in self.EXTENSIONS_LABEL):
+            raise RuntimeError("Filename extension is not valid label file.")
+
+        # if all goes well, open label
+        label = np.fromfile(filename, dtype=np.int32)
+        label = label.reshape((-1))
+
+        if self.drop_points is not False:
+            label = np.delete(label,self.points_to_drop)
+
+        
+
+        # # if all goes well, open label
+        # if prelabelfile != None:
+        #     prelabel = np.fromfile(prelabelfile, dtype=np.int32)
+        # else:
+        #     prelabel = np.zeros(self.prepoints.shape[0], dtype=np.int32)
+        # prelabel = prelabel.reshape((-1))
+
+        # set it
+        self.set_label(label)
+    
+    def open_label_eval(self, filename):
         """ Open raw scan and fill in attributes
         """
         # check filename is string

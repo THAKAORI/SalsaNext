@@ -72,16 +72,16 @@ def eval(test_sequences,splits,pred):
         print("evaluating label ", label_file, "with", pred_file)
         # open label
         label = SemLaserScan(project=False)
-        label.open_scan(scan_file)
-        label.open_label(label_file)
+        label.open_scan_eval(scan_file)
+        label.open_label_eval(label_file)
         u_label_sem = remap_lut[label.sem_label]  # remap to xentropy format
         if FLAGS.limit is not None:
             u_label_sem = u_label_sem[:FLAGS.limit]
 
         # open prediction
         pred = SemLaserScan(project=False)
-        pred.open_scan(scan_file)
-        pred.open_label(pred_file)
+        pred.open_scan_eval(scan_file)
+        pred.open_label_eval(pred_file)
         u_pred_sem = remap_lut[pred.sem_label]  # remap to xentropy format
         if FLAGS.limit is not None:
             u_pred_sem = u_pred_sem[:FLAGS.limit]

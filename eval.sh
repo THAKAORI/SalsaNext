@@ -35,7 +35,7 @@ fi
 d=$(get_abs_filename "$d")
 p=$(get_abs_filename "$p")
 m=$(get_abs_filename "$m")
-export CUDA_VISIBLE_DEVICES="$g"
+#export CUDA_VISIBLE_DEVICES="$g"
 cd ./train/tasks/semantic/; ./infer.py -d "$d" -l "$p" -m "$m" -n "$n" -s "$s" -u "$u" -c "$c"
 echo "finishing infering.\n Starting evaluating"
 ./evaluate_iou.py -d "$d" -p "$p" --split "$s" -m "$m"
