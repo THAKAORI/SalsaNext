@@ -478,6 +478,7 @@ class SemLaserScan(LaserScan):
         else:
             prelabel = np.zeros(self.prepoints.shape[0], dtype=np.int32)
         prelabel = prelabel.reshape((-1))
+        #print(self.points.shape, prelabel.shape)
 
         # set it
         self.set_label(label)

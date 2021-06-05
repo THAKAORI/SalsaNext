@@ -174,7 +174,7 @@ class SalsaNext(nn.Module):
         super(SalsaNext, self).__init__()
         self.nclasses = nclasses
 
-        self.downCntx = ResContextBlock(10, 32)
+        self.downCntx = ResContextBlock(25, 32)
         self.downCntx2 = ResContextBlock(32, 32)
         self.downCntx3 = ResContextBlock(32, 32)
 

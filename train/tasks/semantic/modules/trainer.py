@@ -161,8 +161,8 @@ class Trainer():
             self.multi_gpu = True
             self.n_gpus = torch.cuda.device_count()
 
-        print("batch_size, channel, height, width", 24, 10, 64, 2048)
-        print(summary(self.model, (24, 10, 64, 2048)))
+        print("batch_size, channel, height, width", 24, 25, 64, 2048)
+        print(summary(self.model, (24, 25, 64, 2048)))
 
         self.criterion = nn.NLLLoss(weight=self.loss_w).to(self.device)
         self.ls = Lovasz_softmax(ignore=0).to(self.device)

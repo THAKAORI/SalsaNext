@@ -195,6 +195,8 @@ class SemanticKitti(Dataset):
       cur_pose = self.pose_list[index]
       prepred_file = self.pred_files[index - 1]
 
+    print(prescan_file, prepred_file)
+
     # open a semantic laserscan
     DA = False
     flip_sign = False
