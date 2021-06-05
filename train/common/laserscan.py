@@ -430,20 +430,20 @@ class SemLaserScan(LaserScan):
         self.sem_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
         self.sem_label_color = np.zeros((0, 3), dtype=np.float32)  # [m ,3]: color
         # pre semantic labels
-        #self.presem_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
+        self.presem_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
 
         # instance labels
         self.inst_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
         self.inst_label_color = np.zeros((0, 3), dtype=np.float32)  # [m ,3]: color
-        #self.preinst_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
+        self.preinst_label = np.zeros((0, 1), dtype=np.int32)  # [m, 1]: label
 
         # projection color with semantic labels
         self.proj_sem_label = np.zeros((self.proj_H, self.proj_W),
                                        dtype=np.int32)  # [H,W]  label
         self.proj_sem_color = np.zeros((self.proj_H, self.proj_W, 3),
                                        dtype=np.float)  # [H,W,3] color
-        # self.preproj_sem_label = np.zeros((self.proj_H, self.proj_W),
-        #                                dtype=np.int32)  # [H,W]  label
+        self.preproj_sem_label = np.zeros((self.proj_H, self.proj_W),
+                                       dtype=np.int32)  # [H,W]  label
 
         # projection color with instance labels
         self.proj_inst_label = np.zeros((self.proj_H, self.proj_W),
@@ -472,12 +472,12 @@ class SemLaserScan(LaserScan):
 
         
 
-        # # if all goes well, open label
-        # if prelabelfile != None:
-        #     prelabel = np.fromfile(prelabelfile, dtype=np.int32)
-        # else:
-        #     prelabel = np.zeros(self.prepoints.shape[0], dtype=np.int32)
-        # prelabel = prelabel.reshape((-1))
+        # if all goes well, open label
+        if prelabelfile != None:
+            prelabel = np.fromfile(prelabelfile, dtype=np.int32)
+        else:
+            prelabel = np.zeros(self.prepoints.shape[0], dtype=np.int32)
+        prelabel = prelabel.reshape((-1))
 
         # set it
         self.set_label(label)
@@ -556,5 +556,5 @@ class SemLaserScan(LaserScan):
         self.proj_inst_label[mask] = self.inst_label[self.proj_idx[mask]]
         self.proj_inst_color[mask] = self.inst_color_lut[self.inst_label[self.proj_idx[mask]]]
 
-        # premask = self.preproj_idx >= 0
-        # self.preproj_sem_label[premask] = self.presem_label[self.preproj_idx[premask]]
+        premask = self.preproj_idx >= 0
+        self.preproj_sem_label[premask] = self.presem_label[self.preproj_idx[premask]]

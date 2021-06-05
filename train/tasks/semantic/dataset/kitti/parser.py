@@ -119,6 +119,7 @@ class SemanticKitti(Dataset):
     # placeholder for filenames
     self.scan_files = []
     self.label_files = []
+    self.pred_files = []
     self.pose_list = np.empty((0, 12))
     self.seqstartind = []
 
@@ -135,12 +136,15 @@ class SemanticKitti(Dataset):
       scan_path = os.path.join(self.root, seq, "velodyne")
       label_path = os.path.join(self.root, seq, "labels")
       pose_path = os.path.join(self.root, seq, "poses.txt")
+      pred_path = os.path.join(self.root, seq, "predictions_origin")
 
       # get files
       scan_files = [os.path.join(dp, f) for dp, dn, fn in os.walk(
           os.path.expanduser(scan_path)) for f in fn if is_scan(f)]
       label_files = [os.path.join(dp, f) for dp, dn, fn in os.walk(
           os.path.expanduser(label_path)) for f in fn if is_label(f)]
+      pred_files = [os.path.join(dp, f) for dp, dn, fn in os.walk(
+          os.path.expanduser(pred_path)) for f in fn if is_label(f)]
 
       with open(pose_path, mode='rt', encoding='utf-8') as f:
         for line in f:
@@ -153,11 +157,13 @@ class SemanticKitti(Dataset):
       # extend list
       self.scan_files.extend(scan_files)
       self.label_files.extend(label_files)
+      self.pred_files.extend(pred_files)
       file_num += len(scan_files)
 
     # sort for correspondance
     self.scan_files.sort()
     self.label_files.sort()
+    self.pred_files.sort()
 
     print("Using {} scans from sequences {}".format(len(self.scan_files),
                                                     self.sequences))
@@ -182,12 +188,12 @@ class SemanticKitti(Dataset):
       prescan_file = None
       pre_pose = np.array([1,0,0,0,0,1,0,0,0,0,1,0])
       cur_pose = np.array([1,0,0,0,0,1,0,0,0,0,1,0])
-      prelabel_file = None
+      prepred_file = None
     else:
       prescan_file = self.scan_files[index - 1]
       pre_pose = self.pose_list[index - 1]
       cur_pose = self.pose_list[index]
-      prelabel_file = self.label_files[index - 1]
+      prepred_file = self.pred_files[index - 1]
 
     # open a semantic laserscan
     DA = False
@@ -229,7 +235,7 @@ class SemanticKitti(Dataset):
     scan.open_scan(scan_file, prescan_file, pre_pose, cur_pose)
   
     if self.gt:
-      scan.open_label(label_file, prelabel_file)
+      scan.open_label(label_file, prepred_file)
       # map unused classes to used classes (also for projection)
       scan.sem_label = self.map(scan.sem_label, self.learning_map)
       scan.proj_sem_label = self.map(scan.proj_sem_label, self.learning_map)
@@ -252,15 +258,12 @@ class SemanticKitti(Dataset):
     proj_range = torch.from_numpy(scan.proj_range).clone()
     proj_xyz = torch.from_numpy(scan.proj_xyz).clone()
     proj_remission = torch.from_numpy(scan.proj_remission).clone()
-    preproj_range = torch.from_numpy(scan.preproj_range).clone()
-    preproj_xyz = torch.from_numpy(scan.preproj_xyz).clone()
-    preproj_remission = torch.from_numpy(scan.preproj_remission).clone()
     proj_mask = torch.from_numpy(scan.proj_mask)
-    #preproj_mask = torch.from_numpy(scan.preproj_mask)
+    preproj_mask = torch.from_numpy(scan.preproj_mask)
     if self.gt:
       proj_labels = torch.from_numpy(scan.proj_sem_label).clone()
       proj_labels = proj_labels * proj_mask
-      #preproj_labels = torch.from_numpy(self.labeltoprobmap(scan.preproj_sem_label)).clone()
+      preproj_labels = torch.from_numpy(self.labeltoprobmap(scan.preproj_sem_label)).clone()
     else:
       proj_labels = []
     proj_x = torch.full([self.max_points], -1, dtype=torch.long)
@@ -270,9 +273,7 @@ class SemanticKitti(Dataset):
     proj = torch.cat([proj_range.unsqueeze(0).clone(),
                       proj_xyz.clone().permute(2, 0, 1),
                       proj_remission.unsqueeze(0).clone(),
-                      preproj_range.unsqueeze(0).clone(),
-                      preproj_xyz.clone().permute(2, 0, 1),
-                      preproj_remission.unsqueeze(0).clone()])
+                      preproj_labels])
                       #proj_segment_angle.unsqueeze(0).clone()])
     proj = (proj - self.sensor_img_means[:, None, None]
             ) / self.sensor_img_stds[:, None, None]
