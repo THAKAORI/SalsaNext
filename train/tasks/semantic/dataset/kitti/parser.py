@@ -152,7 +152,7 @@ class SemanticKitti(Dataset):
     print("Using {} scans from sequences {}".format(len(self.scan_files),
                                                     self.sequences))
 
-  def __getitem__(self, index):
+  def get_one_item(self, index):
     # get item in tensor shape
     scan_file = self.scan_files[index]
     if self.gt:
