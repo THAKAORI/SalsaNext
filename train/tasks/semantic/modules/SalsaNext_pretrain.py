@@ -42,8 +42,6 @@ class ResContextBlock(nn.Module):
 class ResBlock(nn.Module):
     def __init__(self, in_filters, out_filters, kernel_size=(3, 3), stride=1):
         super(ResBlock, self).__init__()
-        self.pooling = pooling
-        self.drop_out = drop_out
         self.conv1 = nn.Conv2d(in_filters, out_filters, kernel_size=(1, 1), stride=stride)
         self.act1 = nn.LeakyReLU()
 
@@ -109,7 +107,8 @@ class SalsaNext(nn.Module):
         self.dropout4 = nn.Dropout2d(p=0.2)
         self.resBlock5 = ResBlock(2 * 4 * 32, 2 * 4 * 32)
         self.dropout5 = nn.Dropout2d(p=0.2)
-        self.pool_fc = nn.Sequential(nn.AdaptiveAvgPool2d((1, 1)), nn.Linear(256, 256), nn.ReLU(), nn.Linear(256, 256))
+        self.pooling = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Sequential(nn.Linear(256, 256), nn.ReLU(), nn.Linear(256, 256))
 
     def forward(self, x):
         downCntx = self.downCntx(x)
@@ -129,6 +128,8 @@ class SalsaNext(nn.Module):
         downCntx = self.pool4(downCntx)
         downCntx = self.resBlock5(downCntx)
         downCntx = self.dropout5(downCntx)
-        downCntx = self.pool_fc(downCntx)
+        downCntx = self.pooling(downCntx)
+        downCntx = torch.flatten(downCntx, 1)
+        downCntx = self.fc(downCntx)
 
         return downCntx

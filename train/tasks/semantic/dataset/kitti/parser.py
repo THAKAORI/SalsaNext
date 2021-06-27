@@ -245,8 +245,23 @@ class SemanticKitti(Dataset):
     path_seq = path_split[-3]
     path_name = path_split[-1].replace(".bin", ".label")
 
+    width_under = random.randint(0, 1791)
+    proj = proj[:, :, width_under:width_under+256]
+
+
     # return
     return proj, proj_mask, proj_labels, unproj_labels, path_seq, path_name, proj_x, proj_y, proj_range, unproj_range, proj_xyz, unproj_xyz, proj_remission, unproj_remissions, unproj_n_points
+
+  def __getitem__(self, index):
+    projs = []
+    path_names = []
+
+    for i in range(2):
+      proj, _, _, _, _, path_name, _, _, _, _, _, _, _, _, _ = self.get_one_item(index)
+      projs.append(proj)
+      path_names.append(path_name)
+    
+    return projs
 
   def __len__(self):
     return len(self.scan_files)
