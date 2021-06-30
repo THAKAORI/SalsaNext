@@ -359,11 +359,12 @@ class Parser():
                                        learning_map_inv=self.learning_map_inv,
                                        sensor=self.sensor,
                                        max_points=max_points,
+                                       transform=True,
                                        gt=self.gt)
 
     self.validloader = torch.utils.data.DataLoader(self.valid_dataset,
                                                    batch_size=self.batch_size,
-                                                   shuffle=False,
+                                                   shuffle=self.shuffle_train,
                                                    num_workers=self.workers,
                                                    drop_last=True)
     assert len(self.validloader) > 0

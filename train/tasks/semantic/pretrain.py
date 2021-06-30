@@ -101,7 +101,7 @@ if __name__ == '__main__':
     parser.add_argument('--wd', '--weight-decay', default=1e-4, type=float,
                     metavar='W', help='weight decay (default: 1e-4)',
                     dest='weight_decay')
-    parser.add_argument('-b', '--batch-size', default=48, type=int,
+    parser.add_argument('-b', '--batch-size', default=256, type=int,
                     metavar='N',
                     help='mini-batch size (default: 256), this is the total '
                          'batch size of all GPUs on the current node when '
@@ -222,6 +222,7 @@ if __name__ == '__main__':
                                         shuffle_train=True)
     
     train_loader = data_parser.get_train_set()
+    val_loader = data_parser.get_valid_set()
     
     optimizer = torch.optim.Adam(params.parameters(), FLAGS.lr, weight_decay=FLAGS.weight_decay)
 
@@ -234,4 +235,4 @@ if __name__ == '__main__':
     # create trainer and start the training
     with torch.cuda.device(FLAGS.gpu_index):
         simclr = SimCLR(model=params, optimizer=optimizer, scheduler=scheduler, device=device, FLAGS=FLAGS)
-        simclr.train(train_loader)
+        simclr.train(train_loader, val_loader)
